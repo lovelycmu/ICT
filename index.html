@@ -1,0 +1,1157 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>드론 열화상 전송 시뮬레이터</title>
+<style>
+/* =========================================================
+   색상 정의 (관제센터 분위기의 어두운 남색 화면)
+   시안 = 선택·정상, 주황 = H.264·주의, 초록 = HEVC·양호, 빨강 = 경보
+   ========================================================= */
+:root{
+  --bg:#08112b; --card:#0f1d45; --card2:#132453; --line:#22396f;
+  --text:#e7eefc; --muted:#8ea3cf;
+  --cyan:#22d3ee; --orange:#f59e0b; --green:#22c55e; --red:#ef4444; --raw:#cbd5e1;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:radial-gradient(1200px 600px at 15% -10%,#14295f 0%,var(--bg) 60%) fixed,var(--bg);
+  color:var(--text);
+  font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif;
+  line-height:1.5;
+}
+.wrap{max-width:1280px;margin:0 auto;padding:20px 16px 48px}
+
+/* ---------- 상단 ---------- */
+header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+h1{font-size:1.55rem;margin:0;letter-spacing:-0.01em}
+.sub{color:var(--muted);font-size:.9rem;margin-top:2px}
+.badge{display:inline-flex;align-items:center;gap:6px;font-size:.75rem;padding:3px 10px;border-radius:999px;
+  border:1px solid var(--line);background:#0b1838;color:var(--muted);white-space:nowrap}
+.badge.demo{border-color:var(--cyan);color:var(--cyan)}
+.badge.book{border-color:#3b5aa8;color:#b8c8f0;background:#10224f}
+.status{display:flex;align-items:center;gap:10px}
+.live{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:#0b1838;
+  border:1px solid var(--line);font-size:.85rem}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--cyan);box-shadow:0 0 0 0 rgba(34,211,238,.7);animation:pulse 1.6s infinite}
+.live.paused .dot{background:var(--orange);animation:none}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(34,211,238,.6)}70%{box-shadow:0 0 0 9px rgba(34,211,238,0)}100%{box-shadow:0 0 0 0 rgba(34,211,238,0)}}
+
+/* ---------- 카드 ---------- */
+.card{background:linear-gradient(180deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:16px;
+  padding:16px;margin-bottom:16px;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.card-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.card-head h2{font-size:1.15rem;margin:0;display:flex;align-items:center;gap:8px}
+.card-head h2 svg{color:var(--cyan)}
+.sec-tag{font-size:.8rem;font-weight:700;color:var(--cyan);border:1px solid var(--cyan);border-radius:6px;padding:0 7px}
+
+/* ---------- 조작 가이드 ---------- */
+.guide{display:flex;gap:14px;align-items:flex-start;background:#0c1a40;border:1px dashed #2f4d93;border-radius:14px;padding:12px 16px;margin-bottom:16px}
+.guide svg{flex:none;color:var(--cyan);margin-top:3px}
+.guide b{color:var(--cyan)}
+.guide p{margin:0}
+.guide .keys{color:var(--muted);font-size:.82rem;margin-top:4px}
+kbd{font-family:inherit;font-size:.75rem;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;background:#0b1838}
+
+/* ---------- 버튼형 토글 ---------- */
+.controls{display:flex;flex-wrap:wrap;gap:14px 22px;align-items:flex-end;margin-bottom:12px}
+.ctl label.cap{display:block;font-size:.78rem;color:var(--muted);margin-bottom:5px}
+.seg{display:inline-flex;background:#0a1636;border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px;flex-wrap:wrap}
+.seg button,.btn,.switch{font-family:inherit;font-size:.9rem;color:var(--text);cursor:pointer}
+.seg button{border:0;background:transparent;padding:7px 13px;border-radius:7px;color:var(--muted);display:inline-flex;align-items:center;gap:6px}
+.seg button:hover{color:var(--text);background:#12245a}
+.seg button[aria-pressed="true"]{background:#0e3550;color:#e8fbff;box-shadow:inset 0 0 0 1px var(--cyan)}
+.cdot{width:8px;height:8px;border-radius:50%;display:inline-block}
+.switch{display:inline-flex;align-items:center;gap:10px;border:1px solid var(--line);background:#0a1636;border-radius:10px;padding:6px 12px}
+.switch .knob{width:38px;height:20px;border-radius:999px;background:#2a3b66;position:relative;transition:.2s}
+.switch .knob::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#cfd9f2;transition:.2s}
+.switch[aria-pressed="true"]{border-color:var(--cyan)}
+.switch[aria-pressed="true"] .knob{background:var(--cyan)}
+.switch[aria-pressed="true"] .knob::after{left:20px;background:#fff}
+.switch .state{font-weight:700;min-width:28px;color:var(--muted)}
+.switch[aria-pressed="true"] .state{color:var(--cyan)}
+.btn{border:1px solid var(--line);background:#0a1636;border-radius:10px;padding:7px 14px;display:inline-flex;align-items:center;gap:7px}
+.btn:hover{background:#12245a}
+.btn.alarm{border-color:var(--red);color:#ffd9d9;background:#3a1020}
+.btn.alarm:hover{background:#561528}
+.btn.alarm:active{transform:translateY(1px)}
+
+/* ---------- 섹션 A 배치 ---------- */
+.gridA{display:grid;grid-template-columns:minmax(0,2.1fr) minmax(0,1fr);gap:16px}
+.viewer{display:grid;grid-template-columns:minmax(0,1fr) 52px;gap:8px;align-items:stretch}
+canvas{display:block;width:100%;height:auto;border-radius:10px;background:#050b1e}
+#cbar{height:100%;border-radius:8px}
+.panel{background:#0b1838;border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.panel h3{font-size:.85rem;color:var(--muted);margin:0 0 8px;font-weight:600}
+.gop{display:grid;grid-template-columns:repeat(8,1fr);gap:5px}
+.gop div{text-align:center;padding:8px 0;border-radius:7px;background:#11214d;color:#5f75a8;font-weight:700;border:1px solid transparent;transition:background .15s}
+.gop div.on{background:#0e3550;color:#e8fbff;border-color:var(--cyan);box-shadow:0 0 12px rgba(34,211,238,.35)}
+.gop div.on.I{background:var(--cyan);color:#04202a}
+.gop.dim div{opacity:.35}
+.ftype{display:flex;align-items:baseline;gap:10px;margin-top:10px}
+.ftype .big{font-size:1.8rem;font-weight:800;color:var(--cyan);min-width:34px}
+.ftype .desc{font-size:.88rem;color:#c9d6f3}
+.skip{display:flex;align-items:baseline;gap:10px}
+.skip .num{font-size:2.3rem;font-weight:800;color:var(--green)}
+.skip .note{font-size:.82rem;color:var(--muted)}
+.bars .row{display:grid;grid-template-columns:62px 1fr 74px;gap:8px;align-items:center;margin:7px 0;font-size:.85rem}
+.bars .track{position:relative;height:16px;background:#11214d;border-radius:6px;overflow:visible}
+.bars .fill{height:100%;border-radius:6px;opacity:.45;transition:opacity .2s}
+.bars .row.sel .fill{opacity:1}
+.bars .row.sel{font-weight:700}
+.bars .val{text-align:right;font-variant-numeric:tabular-nums}
+.linkmark{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--cyan)}
+.example{font-size:.72rem;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:0 5px;margin-left:6px}
+
+/* ---------- 섹션 B 배치 ---------- */
+.gridB{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:16px;margin-top:12px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.8rem;color:var(--muted);margin-top:6px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:12px}
+.stat{background:#0b1838;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.stat .k{font-size:.78rem;color:var(--muted)}
+.stat .v{font-size:1.45rem;font-weight:800;font-variant-numeric:tabular-nums}
+.stat .s{font-size:.75rem;color:var(--muted)}
+.ok{color:var(--green)} .bad{color:var(--red)} .warn{color:var(--orange)}
+.caption{font-size:.8rem;color:var(--muted);margin:6px 2px 0}
+
+/* ---------- 좁은 화면 (휴대폰) ---------- */
+@media (max-width:900px){
+  .gridA,.gridB{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:520px){
+  h1{font-size:1.25rem}
+  .viewer{grid-template-columns:minmax(0,1fr) 36px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ================= 상단 ================= -->
+  <header>
+    <div>
+      <div class="title-row">
+        <h1>드론 열화상 감시 영상 전송 시뮬레이터</h1>
+        <span class="badge demo">발표 시연용</span>
+      </div>
+      <div class="sub">송·배전 설비 감시에서의 영상 압축(HEVC)과 QoS 제어 · 교재 Chapter 09 멀티미디어 통신과 미디어</div>
+    </div>
+    <div class="status">
+      <span class="live" id="live"><span class="dot"></span><span id="liveText">실시간 시뮬레이션 동작 중</span></span>
+      <button class="btn" id="pauseBtn" title="Space 키로도 전환">
+        <svg width="14" height="14" viewBox="0 0 14 14" id="pauseIcon"><rect x="2" y="1" width="3.5" height="12" rx="1" fill="currentColor"/><rect x="8.5" y="1" width="3.5" height="12" rx="1" fill="currentColor"/></svg>
+        <span id="pauseText">일시정지</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ================= 직접 조작 가이드 ================= -->
+  <div class="guide">
+    <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="9" y="8.5" width="2" height="6" rx="1" fill="currentColor"/><circle cx="10" cy="5.8" r="1.2" fill="currentColor"/></svg>
+    <div>
+      <p><b>직접 조작 가이드</b> &nbsp;A에서 코덱을 <b>RAW → H.264 → HEVC</b>로 바꾸며 화질과 필요 대역폭을 비교하고, '프레임 블록 분석'을 켜서 바뀐 블록만 보내는 모습을 확인하세요.
+      B에서는 대역폭을 <b>낮음</b>에 두고 <b>긴급 경보 발생</b>을 누른 뒤, QoS를 끄고 켤 때 경보 도착 지연이 빨강에서 초록으로 바뀌는지 보면 됩니다.</p>
+      <div class="keys">단축키: <kbd>Space</kbd> 일시정지 · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 코덱 · <kbd>B</kbd> 블록 분석 · <kbd>E</kbd> 긴급 경보 · <kbd>Q</kbd> QoS</div>
+    </div>
+  </div>
+
+  <!-- ================= 섹션 A ================= -->
+  <section class="card">
+    <div class="card-head">
+      <span class="sec-tag">A</span>
+      <h2>
+        <svg width="20" height="20" viewBox="0 0 20 20"><rect x="2" y="5" width="12" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M14 8.5l4-2.5v8l-4-2.5z" fill="currentColor"/></svg>
+        드론 열화상 화면과 코덱 압축
+      </h2>
+      <span class="badge book">교재 2절 · 압축 기술</span>
+    </div>
+
+    <div class="controls">
+      <div class="ctl">
+        <label class="cap">코덱 선택</label>
+        <div class="seg" data-group="codec">
+          <button data-val="RAW"><span class="cdot" style="background:var(--raw)"></span>무압축 RAW</button>
+          <button data-val="H264"><span class="cdot" style="background:var(--orange)"></span>H.264</button>
+          <button data-val="HEVC"><span class="cdot" style="background:var(--green)"></span>HEVC</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <label class="cap">바뀐 부분만 전송되는지 보기</label>
+        <button class="switch" id="blockSw" aria-pressed="false"><span class="knob"></span>프레임 블록 분석 <span class="state">OFF</span></button>
+      </div>
+    </div>
+
+    <div class="gridA">
+      <div>
+        <div class="viewer">
+          <canvas id="thermal" width="960" height="540" aria-label="드론 열화상 화면"></canvas>
+          <canvas id="cbar" width="70" height="540" aria-label="온도 컬러바"></canvas>
+        </div>
+        <p class="caption">154kV 송전철탑을 열화상으로 촬영한 합성 화면입니다. 오른쪽 접속부(클램프)가 과열되어 깜빡입니다.</p>
+      </div>
+
+      <div>
+        <div class="panel">
+          <h3>GOP (영상 프레임 묶음)</h3>
+          <div class="gop" id="gop"></div>
+          <div class="ftype"><span class="big" id="ftype">I</span><span class="desc" id="fdesc"></span></div>
+        </div>
+        <div class="panel">
+          <h3>정지 배경 블록 스킵률</h3>
+          <div class="skip"><span class="num" id="skipNum">0%</span><span class="note" id="skipNote"></span></div>
+        </div>
+        <div class="panel">
+          <h3>코덱별 필요 대역폭 <span class="example">예시 값</span></h3>
+          <div class="bars" id="bars"></div>
+          <div class="caption" id="barCap"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= 섹션 B ================= -->
+  <section class="card">
+    <div class="card-head">
+      <span class="sec-tag">B</span>
+      <h2>
+        <svg width="20" height="20" viewBox="0 0 20 20"><circle cx="4" cy="10" r="2.4" fill="currentColor"/><circle cx="16" cy="5" r="2.4" fill="currentColor"/><circle cx="16" cy="15" r="2.4" fill="currentColor"/><path d="M6 9l8-3.4M6 11l8 3.4" stroke="currentColor" stroke-width="1.5"/></svg>
+        전송과 QoS
+      </h2>
+      <span class="badge book">교재 1절 · QoS</span>
+    </div>
+
+    <div class="controls">
+      <div class="ctl">
+        <label class="cap">무선 링크 대역폭</label>
+        <div class="seg" data-group="bw">
+          <button data-val="low">낮음 · 10 Mbps</button>
+          <button data-val="mid">보통 · 20 Mbps</button>
+          <button data-val="high">높음 · 50 Mbps</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <label class="cap">코덱 (섹션 A와 연동)</label>
+        <div class="seg" data-group="codec">
+          <button data-val="RAW"><span class="cdot" style="background:var(--raw)"></span>RAW</button>
+          <button data-val="H264"><span class="cdot" style="background:var(--orange)"></span>H.264</button>
+          <button data-val="HEVC"><span class="cdot" style="background:var(--green)"></span>HEVC</button>
+        </div>
+      </div>
+      <div class="ctl">
+        <label class="cap">경보 패킷 먼저 보내기</label>
+        <button class="switch" id="qosSw" aria-pressed="false"><span class="knob"></span>QoS 우선순위 제어 <span class="state">OFF</span></button>
+      </div>
+      <div class="ctl">
+        <label class="cap">접속부 과열 경보 전송</label>
+        <button class="btn alarm" id="alarmBtn">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="M8 1.5l7 12.5H1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><rect x="7.2" y="5.5" width="1.6" height="4.5" rx=".8" fill="currentColor"/><circle cx="8" cy="11.9" r="1" fill="currentColor"/></svg>
+          긴급 경보 발생
+        </button>
+      </div>
+    </div>
+
+    <canvas id="net" width="960" height="300" aria-label="패킷 전송 애니메이션"></canvas>
+    <div class="legend">
+      <span><span class="cdot" id="legVideo" style="background:var(--orange)"></span>영상 패킷</span>
+      <span><span class="cdot" style="background:var(--red);width:11px;height:11px"></span>경보 패킷 (작고 중요)</span>
+      <span><svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1l-8 8" stroke="#94a3b8" stroke-width="2"/></svg>큐가 넘쳐 버려진 패킷</span>
+    </div>
+
+    <div class="gridB">
+      <div>
+        <canvas id="rx" width="480" height="270" aria-label="관제센터 수신 화면"></canvas>
+        <p class="caption">관제센터 수신 화면. 대역폭이 모자라면 화면이 멈칫하거나 깨집니다.</p>
+      </div>
+      <div>
+        <canvas id="graph" width="640" height="270" aria-label="최근 10초 지연 시간 그래프"></canvas>
+        <p class="caption">최근 10초 지연 시간. 선 = 영상 패킷이 큐에서 기다리는 시간, 점 = 경보 패킷 도착 지연.</p>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="k">경보 도착 지연 (최근)</div><div class="v" id="stAlarm">-</div><div class="s" id="stAlarmS">긴급 경보 발생을 눌러 보세요</div></div>
+      <div class="stat"><div class="k">영상 큐 대기</div><div class="v" id="stQueue">-</div><div class="s" id="stQueueS"></div></div>
+      <div class="stat"><div class="k">버려진 패킷 (최근 10초)</div><div class="v" id="stDrop">0</div><div class="s">큐 크기 40개 초과 시</div></div>
+      <div class="stat"><div class="k">링크 부하</div><div class="v" id="stLoad">-</div><div class="s" id="stLoadS"></div></div>
+    </div>
+  </section>
+</div>
+
+<script>
+"use strict";
+/* =====================================================================
+   0. 공통 설정값 (모든 수치는 발표용 예시 값)
+   ===================================================================== */
+const CODEC = {
+  // mbps: 필요 대역폭, mix/q: 화질 저하 정도(블록 평균과 섞는 비율, 양자화 계단 크기)
+  RAW:  { label: "무압축 RAW", short: "RAW",   mbps: 120,  color: "#cbd5e1", mix: 0,    q: 1,  gop: false },
+  H264: { label: "H.264",      short: "H.264", mbps: 16.7, color: "#f59e0b", mix: 0.42, q: 14, gop: true  },
+  HEVC: { label: "HEVC",       short: "HEVC",  mbps: 8.3,  color: "#22c55e", mix: 0.12, q: 6,  gop: true  },
+};
+const LINK = { low: { mbps: 10 }, mid: { mbps: 20 }, high: { mbps: 50 } };
+
+const FRAME_DT = 0.4;              // 시연용 프레임 간격 [초] (실제 30fps를 눈으로 따라갈 수 있게 늘림)
+const GOP_SEQ  = "IPBBPBBP";       // GOP 순서
+const GOP_W    = { I: 2.6, P: 1.0, B: 0.6 }; // 프레임 종류별 크기 비율 (평균 1). I가 가장 큼
+const DOT_MB   = 0.5;              // 화면의 점 1개 = 0.5 Mb 분량의 영상 패킷
+const ALARM_SIZE = 0.02;           // 경보 패킷 크기 (영상 점의 2%, 매우 작음)
+const QUEUE_CAP  = 40;             // 송신 큐 최대 길이 (넘치면 버림)
+const ALARM_CAP  = 10;             // QoS 켰을 때 경보 전용 큐 길이
+const PROP     = 0.03;             // 전파 + 유선 구간 지연 [초]
+const PLAYOUT  = 0.5;              // 관제 화면 재생 여유 [초]: 이보다 늦게 오면 화면 멈춤
+const ALARM_OK = 0.2;              // 경보 허용 지연 [초]: 이하면 초록, 넘으면 빨강
+const SKIP_AFTER = 1.0;           // 재생 시각보다 이만큼 더 늦으면 그 프레임을 포기 (화면 깨짐)
+
+// 현재 상태 (버튼으로 바뀌는 값)
+const S = { codec: "H264", blocks: false, bw: "mid", qos: false, paused: false, t: 0 };
+
+/* =====================================================================
+   1. 열화상 장면 만들기
+   - 작은 회색 캔버스(241×135)에 '온도'를 밝기로 그린 뒤
+   - 코덱 화질 저하를 적용하고
+   - 열화상 색표(파랑→노랑→빨강)로 칠해서 크게 확대해 보여줍니다.
+   ===================================================================== */
+const TW = 241, TH = 135, SCALE = 4;       // 버퍼 크기, 화면 확대 배율
+const T_MIN = 0, T_MAX = 105;              // 색표 온도 범위 [°C]
+const SPAN = 230, TOWER0 = 120;            // 철탑 간격, 0번 철탑 위치
+const ARMS = [[30, 22], [48, 30], [66, 22]]; // 완금(가로 팔) 높이, 반폭
+const HOT = { dx: 35, y: 58 };              // 과열 접속부 위치 (0번 철탑 오른쪽 중간 상)
+
+const sceneCv = document.createElement("canvas"); sceneCv.width = TW; sceneCv.height = TH;
+const sctx = sceneCv.getContext("2d", { willReadFrequently: true });
+const colorCv = document.createElement("canvas"); colorCv.width = TW; colorCv.height = TH;
+const cctx = colorCv.getContext("2d");
+const colorImg = cctx.createImageData(TW, TH);
+const gbuf = new Float32Array(TW * TH);    // 코덱 처리용 밝기 버퍼
+let grayNow = new Uint8Array(TW * TH);     // 이번 화면의 원본 밝기 (블록 분석용)
+
+// 온도 → 0~255 밝기
+const toGray = T => Math.max(0, Math.min(255, (T - T_MIN) / (T_MAX - T_MIN) * 255));
+const g = T => { const v = Math.round(toGray(T)); return `rgb(${v},${v},${v})`; };
+
+// 열화상 색표 (256단계 미리 계산): 남색 → 파랑 → 하늘 → 노랑 → 주황 → 빨강
+const LUT = (() => {
+  const stops = [[0, [8, 14, 70]], [0.25, [30, 80, 230]], [0.42, [30, 190, 220]],
+                 [0.6, [245, 220, 60]], [0.8, [245, 120, 30]], [1, [230, 30, 30]]];
+  const lut = new Uint8Array(256 * 3);
+  for (let i = 0; i < 256; i++) {
+    const x = i / 255;
+    let k = 0; while (k < stops.length - 2 && x > stops[k + 1][0]) k++;
+    const [x0, c0] = stops[k], [x1, c1] = stops[k + 1];
+    const u = Math.min(1, Math.max(0, (x - x0) / (x1 - x0)));
+    for (let j = 0; j < 3; j++) lut[i * 3 + j] = Math.round(c0[j] + (c1[j] - c0[j]) * u);
+  }
+  return lut;
+})();
+const lutColor = v => { const i = Math.round(v) * 3; return `rgb(${LUT[i]},${LUT[i+1]},${LUT[i+2]})`; };
+
+// 드론이 천천히 좌우로 흐르듯 이동 (화면 이동량, 버퍼 픽셀 단위)
+const scrollAt = t => 40 * Math.sin(t * 0.13);
+// 접속부 온도: 86~100°C 사이에서 맥박처럼 깜빡임
+const hotTemp = t => 86 + 14 * Math.pow(0.5 + 0.5 * Math.sin(t * 3.4), 2);
+
+function drawTower(ctx, x) {
+  const baseY = 114, topY = 14, bw = 14, tw = 3;
+  const half = y => tw + (bw - tw) * (y - topY) / (baseY - topY); // 높이별 철탑 반폭 (아래로 갈수록 넓음)
+  ctx.strokeStyle = g(37); ctx.lineWidth = 1.1; ctx.beginPath();
+  // 주주재(다리) 두 개
+  ctx.moveTo(x - half(baseY), baseY); ctx.lineTo(x - tw, topY);
+  ctx.moveTo(x + half(baseY), baseY); ctx.lineTo(x + tw, topY);
+  // X자 사재(보강재)
+  const n = 8;
+  for (let i = 0; i < n; i++) {
+    const y0 = topY + i * (baseY - topY) / n, y1 = topY + (i + 1) * (baseY - topY) / n;
+    ctx.moveTo(x - half(y0), y0); ctx.lineTo(x + half(y1), y1);
+    ctx.moveTo(x + half(y0), y0); ctx.lineTo(x - half(y1), y1);
+  }
+  // 꼭대기 가공지선 지지부
+  ctx.moveTo(x - tw, topY); ctx.lineTo(x, 6); ctx.lineTo(x + tw, topY);
+  // 완금 (전선을 거는 가로 팔)
+  for (const [ya, hw] of ARMS) {
+    ctx.moveTo(x - hw, ya); ctx.lineTo(x + hw, ya);
+    ctx.moveTo(x - hw, ya); ctx.lineTo(x - half(ya + 8), ya + 8);
+    ctx.moveTo(x + hw, ya); ctx.lineTo(x + half(ya + 8), ya + 8);
+  }
+  ctx.stroke();
+  // 애자련: 완금 끝에 매달린 절연체 (작은 원판 여러 개)
+  ctx.fillStyle = g(44);
+  for (const [ya, hw] of ARMS) for (const s of [-1, 1])
+    for (let j = 0; j < 4; j++) ctx.fillRect(x + s * hw - 1.6, ya + 1 + j * 2, 3.2, 1.3);
+}
+
+function wire(ctx, x1, y1, x2, y2, sag) {
+  // 전선은 가운데가 처지는 곡선 (현수선을 2차 곡선으로 근사)
+  ctx.moveTo(x1, y1);
+  ctx.quadraticCurveTo((x1 + x2) / 2, (y1 + y2) / 2 + 2 * sag, x2, y2);
+}
+
+// 움직이지 않는 배경(하늘, 산, 땅, 철탑, 전선)은 넓은 '세계 캔버스'에 한 번만 그려 둡니다.
+// 매 프레임 이 그림을 정수 픽셀만큼 밀어서 복사하므로, 드론이 움직여도 배경 픽셀이 정확히 같습니다.
+// (그래야 블록 분석에서 '움직임 보상 후 변화 없음'이 정확하게 나옵니다)
+const WX0 = -80, WW = 420;   // 세계 캔버스가 덮는 범위: x = -80 ~ 340 (드론 이동 범위 −40~40 포함)
+const worldCv = document.createElement("canvas"); worldCv.width = WW; worldCv.height = TH;
+
+function drawStatic(ctx, sx, W) {
+  // 하늘: 위가 가장 차가움
+  const sky = ctx.createLinearGradient(0, 0, 0, 100);
+  sky.addColorStop(0, g(6)); sky.addColorStop(1, g(17));
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, TH);
+  // 먼 산 능선
+  ctx.fillStyle = g(22); ctx.beginPath(); ctx.moveTo(0, TH);
+  for (let x = 0; x <= W; x++) {
+    const wx = x + sx;
+    ctx.lineTo(x, 98 - 6 * Math.sin(wx * 0.021) - 3 * Math.sin(wx * 0.057 + 1));
+  }
+  ctx.lineTo(W, TH); ctx.fill();
+  // 지면과 작업 도로
+  ctx.fillStyle = g(27); ctx.fillRect(0, 110, W, TH - 110);
+  ctx.fillStyle = g(33); ctx.fillRect(0, 121, W, 6);
+
+  // 철탑과 전선
+  const k0 = Math.floor((sx - 200) / SPAN), k1 = Math.ceil((sx + W + 200) / SPAN);
+  for (let k = k0; k <= k1; k++) drawTower(ctx, k * SPAN + TOWER0 - sx);
+  ctx.beginPath();
+  for (let k = k0; k < k1; k++) {
+    const xa = k * SPAN + TOWER0 - sx, xb = xa + SPAN;
+    for (const [ya, hw] of ARMS) for (const s of [-1, 1]) wire(ctx, xa + s * hw, ya + 9, xb + s * hw, ya + 9, 16);
+  }
+  ctx.strokeStyle = g(48); ctx.lineWidth = 1.2; ctx.stroke();
+  ctx.beginPath();
+  for (let k = k0; k < k1; k++) { const xa = k * SPAN + TOWER0 - sx; wire(ctx, xa, 6, xa + SPAN, 6, 10); }
+  ctx.strokeStyle = g(34); ctx.lineWidth = 0.9; ctx.stroke();
+}
+
+function drawScene(sx, t) {
+  const ctx = sctx;
+  // 정지 배경 복사 (sx는 정수)
+  ctx.drawImage(worldCv, WX0 - sx, 0);
+
+  // 과열 접속부 (0번 철탑 오른쪽 중간 상): 뜨거운 점
+  const hx = TOWER0 + HOT.dx - sx, hy = HOT.y, hT = hotTemp(t);
+  const rg = ctx.createRadialGradient(hx, hy, 0, hx, hy, 6);
+  rg.addColorStop(0, g(hT)); rg.addColorStop(0.45, g((hT + 48) / 2));
+  const v = Math.round(toGray(48)); rg.addColorStop(1, `rgba(${v},${v},${v},0)`);
+  ctx.fillStyle = rg; ctx.fillRect(hx - 7, hy - 7, 14, 14);
+
+  // 도로 위 작업 차량 (엔진이 따뜻함): 드론과 별개로 움직이는 물체
+  const vx = 300 - ((t * 16) % 600) - sx;
+  if (vx > -20 && vx < TW + 20) {
+    ctx.fillStyle = g(38); ctx.fillRect(vx, 119, 13, 5);
+    ctx.fillStyle = g(70); ctx.fillRect(vx, 120, 4, 3);
+    ctx.fillStyle = g(45); ctx.fillRect(vx + 2, 124, 2, 1.5); ctx.fillRect(vx + 9, 124, 2, 1.5);
+  }
+}
+
+// 코덱 화질 저하 + 열화상 색 입히기
+function encodeAndColor() {
+  const d = sctx.getImageData(0, 0, TW, TH).data;
+  for (let i = 0; i < TW * TH; i++) { grayNow[i] = d[i * 4]; gbuf[i] = d[i * 4]; }
+  const c = CODEC[S.codec];
+  if (c.mix > 0) {
+    // 8×8 블록마다 평균을 구해 섞고(세부 정보 손실), 밝기를 계단처럼 양자화 → 블록 노이즈
+    const B = 8;
+    for (let by = 0; by < TH; by += B) for (let bx = 0; bx < TW; bx += B) {
+      const x1 = Math.min(bx + B, TW), y1 = Math.min(by + B, TH);
+      let sum = 0, n = 0;
+      for (let y = by; y < y1; y++) for (let x = bx; x < x1; x++) { sum += gbuf[y * TW + x]; n++; }
+      const m = sum / n;
+      for (let y = by; y < y1; y++) for (let x = bx; x < x1; x++) {
+        const i = y * TW + x;
+        gbuf[i] = Math.round(((1 - c.mix) * gbuf[i] + c.mix * m) / c.q) * c.q;
+      }
+    }
+  }
+  const out = colorImg.data;
+  for (let i = 0; i < TW * TH; i++) {
+    const v = Math.max(0, Math.min(255, Math.round(gbuf[i]))) * 3;
+    out[i * 4] = LUT[v]; out[i * 4 + 1] = LUT[v + 1]; out[i * 4 + 2] = LUT[v + 2]; out[i * 4 + 3] = 255;
+  }
+  cctx.putImageData(colorImg, 0, 0);
+}
+
+/* =====================================================================
+   2. 프레임 블록 분석 (움직임 보상 후 바뀐 블록 찾기)
+   - 드론이 움직이면 화면 전체가 밀리지만, 코덱은 '움직임 벡터'로 이를 보상합니다.
+   - 보상한 뒤에도 달라진 블록(깜빡이는 열점, 움직이는 차량, 새로 들어온 가장자리)만 전송합니다.
+   ===================================================================== */
+const BLK = 15, GX = 16, GY = 9;         // 15px 블록, 16×9 격자
+let prevGray = null, prevScroll = 0;
+const analysis = { mask: new Uint8Array(GX * GY), sent: GX * GY, type: "I", skip: 0, avgSkip: [] };
+
+function analyzeFrame(type, scrollInt) {
+  const cur = grayNow.slice();
+  const all = type === "I" || !prevGray;   // I 프레임은 전체 블록 전송
+  let sent = 0;
+  const dx = scrollInt - prevScroll;       // 전역 움직임 벡터 (드론 이동량)
+  for (let by = 0; by < GY; by++) for (let bx = 0; bx < GX; bx++) {
+    let changed = all;
+    if (!all) {
+      let sum = 0, n = 0, edge = false;
+      for (let y = by * BLK; y < (by + 1) * BLK; y++) for (let x = bx * BLK; x < (bx + 1) * BLK; x++) {
+        const px = x + dx;
+        if (px < 0 || px >= TW) { edge = true; break; }  // 이전 화면에 없던 새 영역
+        sum += Math.abs(cur[y * TW + x] - prevGray[y * TW + px]); n++;
+      }
+      changed = edge || sum / n > 1.0;
+    }
+    analysis.mask[by * GX + bx] = changed ? 1 : 0;
+    if (changed) sent++;
+  }
+  analysis.sent = sent; analysis.type = type;
+  analysis.skip = Math.round((1 - sent / (GX * GY)) * 100);
+  if (type !== "I") { analysis.avgSkip.push(analysis.skip); if (analysis.avgSkip.length > 12) analysis.avgSkip.shift(); }
+  prevGray = cur; prevScroll = scrollInt;
+}
+
+/* =====================================================================
+   3. 섹션 A 화면 그리기 (열화상 + 블록 분석 + 화면 정보)
+   ===================================================================== */
+const thermal = document.getElementById("thermal"), tctx = thermal.getContext("2d");
+const cbar = document.getElementById("cbar"), bctx = cbar.getContext("2d");
+
+function drawThermal(scroll, scrollInt, t) {
+  const frac = scroll - scrollInt;           // 1픽셀보다 작은 이동은 확대 화면에서 부드럽게 처리
+  tctx.imageSmoothingEnabled = true;
+  tctx.drawImage(colorCv, -frac * SCALE, 0, TW * SCALE, TH * SCALE);
+
+  // 블록 분석 겹쳐 보기
+  if (S.blocks) {
+    for (let by = 0; by < GY; by++) for (let bx = 0; bx < GX; bx++) {
+      const x = (bx * BLK) * SCALE, y = (by * BLK) * SCALE, s = BLK * SCALE;
+      if (analysis.mask[by * GX + bx]) {
+        tctx.fillStyle = analysis.type === "I" ? "rgba(34,211,238,0.16)" : "rgba(34,211,238,0.35)";
+        tctx.fillRect(x, y, s, s);
+        tctx.strokeStyle = "rgba(34,211,238,0.95)"; tctx.lineWidth = 2; tctx.strokeRect(x + 1, y + 1, s - 2, s - 2);
+      } else {
+        tctx.fillStyle = "rgba(4,10,30,0.45)"; tctx.fillRect(x, y, s, s);
+        tctx.strokeStyle = "rgba(140,160,210,0.18)"; tctx.lineWidth = 1; tctx.strokeRect(x + 0.5, y + 0.5, s - 1, s - 1);
+      }
+    }
+    const msg = analysis.type === "I"
+      ? `${S.codec === "RAW" ? "무압축" : "I 프레임"}: 전체 ${GX * GY}개 블록 전송`
+      : `${analysis.type} 프레임: 바뀐 블록 ${analysis.sent}개만 전송 · 나머지 ${GX * GY - analysis.sent}개 생략`;
+    pill(tctx, msg, 480, 500, "center", "rgba(4,12,34,0.85)", "#a5f3fc");
+  }
+
+  // 과열 지점 표시 (빨간 원이 맥박처럼)
+  const hx = (TOWER0 + HOT.dx - scroll) * SCALE, hy = HOT.y * SCALE, hT = hotTemp(t);
+  const r = 26 + 6 * Math.sin(t * 3.4);
+  tctx.strokeStyle = "rgba(239,68,68,0.9)"; tctx.lineWidth = 2;
+  tctx.beginPath(); tctx.arc(hx, hy, r, 0, Math.PI * 2); tctx.stroke();
+  tctx.beginPath(); tctx.moveTo(hx + r * 0.7, hy - r * 0.7); tctx.lineTo(hx + 70, hy - 50); tctx.lineTo(hx + 160, hy - 50); tctx.stroke();
+  tctx.font = "bold 20px Malgun Gothic, sans-serif"; tctx.fillStyle = "#fecaca"; tctx.textAlign = "left";
+  tctx.fillText(`접속부 과열 ${hT.toFixed(1)}°C`, hx + 74, hy - 58);
+
+  // 화면 정보(HUD): 모서리 표시, 상태 글자
+  hud(tctx, t, hT);
+}
+
+function hud(ctx, t, hT) {
+  ctx.strokeStyle = "rgba(220,235,255,0.75)"; ctx.lineWidth = 3;
+  const m = 18, L = 34, W = 960, H = 540;
+  ctx.beginPath();
+  ctx.moveTo(m, m + L); ctx.lineTo(m, m); ctx.lineTo(m + L, m);
+  ctx.moveTo(W - m - L, m); ctx.lineTo(W - m, m); ctx.lineTo(W - m, m + L);
+  ctx.moveTo(m, H - m - L); ctx.lineTo(m, H - m); ctx.lineTo(m + L, H - m);
+  ctx.moveTo(W - m - L, H - m); ctx.lineTo(W - m, H - m); ctx.lineTo(W - m, H - m - L);
+  // 가운데 조준선
+  ctx.moveTo(W / 2 - 14, H / 2); ctx.lineTo(W / 2 + 14, H / 2);
+  ctx.moveTo(W / 2, H / 2 - 14); ctx.lineTo(W / 2, H / 2 + 14);
+  ctx.stroke();
+  ctx.font = "bold 18px Malgun Gothic, sans-serif"; ctx.textAlign = "left";
+  // 녹화 표시 점 (1초 주기 깜빡임)
+  if (Math.floor(t * 2) % 2 === 0) { ctx.fillStyle = "#ef4444"; ctx.beginPath(); ctx.arc(46, 48, 7, 0, 7); ctx.fill(); }
+  ctx.fillStyle = "#e6f0ff"; ctx.fillText("LIVE  드론 2호기 · 154kV 송전선로 순시", 60, 54);
+  ctx.textAlign = "right";
+  const speed = Math.abs(40 * 0.13 * Math.cos(t * 0.13) * 0.25).toFixed(1); // 화면 이동 속도를 m/s처럼 표시
+  ctx.fillText(`고도 42 m · 속도 ${speed} m/s`, 942, 54);
+  ctx.textAlign = "left";
+  const c = CODEC[S.codec];
+  ctx.fillStyle = c.color; ctx.fillText(`코덱 ${c.label} · ${c.mbps} Mbps`, 40, 512);
+  ctx.textAlign = "right"; ctx.fillStyle = hT > 90 ? "#fca5a5" : "#e6f0ff";
+  ctx.fillText(`최고 ${hT.toFixed(1)}°C${hT > 90 ? "  과열" : ""}`, 942, 512);
+}
+
+function pill(ctx, text, x, y, align, bg, fg) {
+  ctx.font = "bold 19px Malgun Gothic, sans-serif";
+  const w = ctx.measureText(text).width + 28, h = 34;
+  const x0 = align === "center" ? x - w / 2 : x;
+  ctx.fillStyle = bg; roundRect(ctx, x0, y - h + 8, w, h, 10); ctx.fill();
+  ctx.fillStyle = fg; ctx.textAlign = "left"; ctx.fillText(text, x0 + 14, y);
+}
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath(); ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+
+// 온도 컬러바 (오른쪽 세로 막대) + 현재 최고 온도 표시
+function drawColorbar(hT) {
+  const W = 70, H = 540, top = 20, bot = 520, x0 = 6, bw = 20;
+  bctx.clearRect(0, 0, W, H);
+  for (let y = top; y <= bot; y++) {
+    const T = T_MAX - (y - top) / (bot - top) * (T_MAX - T_MIN);
+    bctx.fillStyle = lutColor(toGray(T)); bctx.fillRect(x0, y, bw, 1.5);
+  }
+  bctx.font = "15px Malgun Gothic, sans-serif"; bctx.fillStyle = "#c7d4f2"; bctx.textAlign = "left";
+  for (let T = 0; T <= 100; T += 20) {
+    const y = top + (T_MAX - T) / (T_MAX - T_MIN) * (bot - top);
+    bctx.fillRect(x0 + bw, y, 5, 1.5); bctx.fillText(`${T}`, x0 + bw + 8, y + 5);
+  }
+  bctx.fillText("°C", x0 + bw + 8, top + 2);
+  // 현재 접속부 온도 위치에 삼각 표시
+  const y = top + (T_MAX - hT) / (T_MAX - T_MIN) * (bot - top);
+  bctx.fillStyle = "#ef4444"; bctx.beginPath(); bctx.moveTo(x0 - 4, y); bctx.lineTo(x0 + 4, y - 6); bctx.lineTo(x0 + 4, y + 6); bctx.fill();
+}
+
+/* =====================================================================
+   4. 섹션 B: 패킷 전송 시뮬레이션 (이산 사건 방식)
+   - 영상 프레임이 패킷(점)으로 쪼개져 드론의 송신 큐에 들어갑니다.
+   - 무선 링크는 한 번에 패킷 하나씩, '크기 ÷ 대역폭' 시간에 걸쳐 보냅니다.
+   - QoS OFF: 도착 순서대로(FIFO) → 경보가 영상 뒤에 줄을 섬
+   - QoS ON : 경보 큐를 먼저 확인 → 경보가 앞질러 감
+   ===================================================================== */
+let seq = 0;                     // 도착 순번 (FIFO 순서 판단용)
+const pending = [];              // 앞으로 큐에 도착할 패킷 (시간순 정렬)
+const videoQ = [], alarmQ = [];  // 송신 큐 (영상, 경보)
+let current = null;              // 지금 전송 중인 패킷
+const flying = [];               // 화면에서 날아가는 중인 패킷 (그림용)
+const dropMarks = [];            // 버려진 패킷 표시 (그림용)
+const frames = [];               // 관제 화면 재생 대기 프레임
+const dropTimes = [];            // 최근 버려진 시각들
+const alarmLog = [];             // 경보 도착 기록 {t, d, ok, lost}
+const qSamples = [];             // 그래프용 영상 큐 대기 시간 기록
+let lastAlarm = null;            // 가장 최근 도착한 경보 {d, ok, lost, shownAt}
+let frameNo = -1, nextFrameT = 0, nextSampleT = 0;
+
+const bwUnits = () => LINK[S.bw].mbps / DOT_MB;     // 초당 보낼 수 있는 점 개수
+
+function insertPending(p) {      // 시간순 위치에 끼워 넣기
+  let i = pending.length;
+  while (i > 0 && pending[i - 1].arr > p.arr) i--;
+  pending.splice(i, 0, p);
+}
+
+// 새 프레임 생성: 섹션 A의 GOP 표시와 섹션 B의 패킷 생성이 같은 박자로 움직임
+function onFrameTick(tf) {
+  frameNo++;
+  const c = CODEC[S.codec];
+  const type = c.gop ? GOP_SEQ[frameNo % GOP_SEQ.length] : "I";   // 무압축은 매 프레임 전체 전송
+  // 프레임 하나의 패킷 수 = 비트레이트 × 프레임 간격 × 종류별 비율 ÷ 점 크기
+  const n = Math.max(1, Math.round(c.mbps * FRAME_DT * (c.gop ? GOP_W[type] : 1) / DOT_MB));
+  const fr = { t: tf, type, needed: n, got: 0, dropped: 0, done: tf };
+  frames.push(fr);
+  for (let i = 0; i < n; i++) {
+    // 인코더가 프레임을 0.1초 동안 연달아 내보냄 (I 프레임 때 몰려 들어오는 버스트)
+    insertPending({ kind: "video", size: 1, arr: tf + 0.1 * i / n, frame: fr, color: c.color });
+  }
+  analyzeFrame(type, lastScrollInt);   // 직전에 그린 화면 기준으로 블록 분석
+  updateGopUI(type);
+}
+
+function triggerAlarm() {
+  // 긴급 경보: 작은 경보 패킷 5개를 0.12초 간격으로 보냄
+  for (let i = 0; i < 5; i++) insertPending({ kind: "alarm", size: ALARM_SIZE, arr: S.t + i * 0.12 });
+  flashAlarmBtn();
+}
+
+function enqueue(p, t) {
+  p.seq = seq++;
+  p.vx = 120; p.vy = 150;                          // 그림 시작 위치 (드론 바로 옆)
+  const total = videoQ.length + alarmQ.length;
+  let full;
+  if (S.qos) full = p.kind === "alarm" ? alarmQ.length >= ALARM_CAP : videoQ.length >= QUEUE_CAP;
+  else full = total >= QUEUE_CAP;                  // FIFO는 큐 하나를 같이 씀 → 경보도 버려질 수 있음
+  if (full) { drop(p, t); return; }
+  (p.kind === "alarm" ? alarmQ : videoQ).push(p);
+}
+
+function drop(p, t) {
+  dropTimes.push(t);
+  if (dropMarks.length < 60) dropMarks.push({ x: 150 + Math.random() * 20, y: 150, t0: t });
+  if (p.kind === "video") { p.frame.dropped++; p.frame.done = t; }
+  else { const a = { t, d: null, ok: false, lost: true }; alarmLog.push(a); lastAlarm = { ...a, shownAt: t }; }
+}
+
+function pickNext() {
+  // 다음에 보낼 패킷 고르기 = 스케줄링
+  if (S.qos && alarmQ.length) return alarmQ.shift();          // 우선순위: 경보 먼저
+  if (!alarmQ.length) return videoQ.shift() || null;
+  if (!videoQ.length) return alarmQ.shift();
+  return alarmQ[0].seq < videoQ[0].seq ? alarmQ.shift() : videoQ.shift(); // FIFO: 먼저 온 것부터
+}
+
+function startNext(t) {
+  const p = pickNext();
+  if (!p) { current = null; return; }
+  p.start = t; p.finish = t + p.size / bwUnits();             // 전송 시간 = 크기 ÷ 대역폭
+  current = p;
+}
+
+function complete(p, t) {
+  const d = t - p.arr + PROP;                                  // 지연 = 큐 대기 + 전송 시간 + 전파 지연
+  p.delay = d;
+  flying.push({ p, t0: t });
+  if (p.kind === "video") { p.frame.got++; p.frame.done = t + PROP; }
+}
+
+// 시뮬레이션 시각 now까지 일어난 사건(도착, 전송 완료)을 시간 순서대로 처리
+function processNet(now) {
+  for (let guard = 0; guard < 5000; guard++) {
+    const tA = pending.length ? pending[0].arr : Infinity;
+    const tD = current ? current.finish : Infinity;
+    const te = Math.min(tA, tD);
+    if (te > now) break;
+    if (tD <= tA) { complete(current, tD); current = null; startNext(tD); }
+    else { const p = pending.shift(); enqueue(p, tA); if (!current) startNext(tA); }
+  }
+}
+
+// 영상 패킷이 지금 큐에 들어가면 기다릴 시간 (그래프 선)
+function queueDelay() {
+  let units = 0;
+  for (const p of videoQ) units += p.size;
+  if (!S.qos) for (const p of alarmQ) units += p.size;
+  if (current) units += Math.max(0, current.finish - S.t) * bwUnits();
+  return units / bwUnits();
+}
+
+/* ---------- 관제 화면 재생 상태 ---------- */
+const rxState = { mode: "live", corrupt: false, latency: 0 };
+function updatePlayback(now) {
+  // 재생 시각(생성 + 0.5초)이 된 프레임을 차례로 확인
+  while (frames.length && frames[0].t + PLAYOUT <= now) {
+    const f = frames[0];
+    const late = now > f.t + PLAYOUT + SKIP_AFTER;   // 너무 늦은 프레임은 기다리지 않고 건너뜀
+    if (f.got + f.dropped < f.needed && !late) { rxState.mode = "freeze"; return; } // 아직 다 안 옴 → 화면 멈춤
+    frames.shift();
+    if (f.dropped > 0 || late) rxState.corrupt = true;  // 빠진 프레임 → 깨짐 (다음 온전한 I 프레임까지 이어짐)
+    else if (f.type === "I") rxState.corrupt = false; // 온전한 I 프레임이 오면 회복
+    rxState.mode = rxState.corrupt ? "corrupt" : "live";
+    rxState.latency = late ? now - f.t : f.done - f.t;   // 건너뛴 프레임은 '지금까지 기다린 시간'
+  }
+}
+
+/* =====================================================================
+   5. 섹션 B 그리기: 네트워크 애니메이션
+   ===================================================================== */
+const net = document.getElementById("net"), nctx = net.getContext("2d");
+const HEAD_X = 432, LANE_Y = 150, SLOT = 7.1;
+const RELAY = { x: 640, y: 150 }, CENTER = { x: 880, y: 150 };
+const FLY1 = 0.38, FLY2 = 0.3;     // 화면 이동 시간 (그림용)
+
+function pathPoint(u) {
+  // u: 0~1, 무선 구간(곡선) → 유선 구간(직선)
+  const a = FLY1 / (FLY1 + FLY2);
+  if (u < a) {
+    const s = u / a, x0 = HEAD_X + 14, y0 = LANE_Y, cx = (x0 + RELAY.x) / 2, cy = 78;
+    return [(1 - s) * (1 - s) * x0 + 2 * (1 - s) * s * cx + s * s * RELAY.x,
+            (1 - s) * (1 - s) * y0 + 2 * (1 - s) * s * cy + s * s * RELAY.y];
+  }
+  const s = (u - a) / (1 - a);
+  return [RELAY.x + (CENTER.x - 30 - RELAY.x) * s, RELAY.y];
+}
+
+function drawNet(t, dt) {
+  const ctx = nctx, W = 960, H = 300;
+  ctx.clearRect(0, 0, W, H);
+  // 바탕 격자
+  ctx.strokeStyle = "rgba(60,90,160,0.13)"; ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+
+  // 무선 구간: 대역폭이 클수록 두껍게, 점선이 흐름
+  const lw = { low: 2, mid: 4, high: 8 }[S.bw];
+  ctx.save();
+  ctx.setLineDash([10, 8]); ctx.lineDashOffset = -t * 40;
+  ctx.strokeStyle = "rgba(34,211,238,0.55)"; ctx.lineWidth = lw;
+  ctx.beginPath(); ctx.moveTo(HEAD_X + 14, LANE_Y);
+  ctx.quadraticCurveTo((HEAD_X + 14 + RELAY.x) / 2, 78, RELAY.x, RELAY.y); ctx.stroke();
+  ctx.restore();
+  // 유선 구간
+  ctx.strokeStyle = "rgba(148,170,220,0.5)"; ctx.lineWidth = 8;
+  ctx.beginPath(); ctx.moveTo(RELAY.x, RELAY.y); ctx.lineTo(CENTER.x - 30, CENTER.y); ctx.stroke();
+
+  label(ctx, `무선 구간 ${LINK[S.bw].mbps} Mbps (병목)`, (HEAD_X + RELAY.x) / 2, 72, "#a5f3fc");
+  label(ctx, "유선 백본 (충분히 넓음)", (RELAY.x + CENTER.x) / 2, 130, "#9fb3dc");
+
+  // 송신 큐 영역
+  ctx.fillStyle = "rgba(12,26,64,0.9)"; ctx.strokeStyle = "rgba(90,120,190,0.6)"; ctx.lineWidth = 1.5;
+  roundRect(ctx, 130, LANE_Y - 34, HEAD_X - 118, 68, 12); ctx.fill(); ctx.stroke();
+  const n = videoQ.length + alarmQ.length;
+  label(ctx, `드론 송신 큐 ${n} / ${QUEUE_CAP}`, (130 + HEAD_X + 12) / 2, LANE_Y - 44, n >= QUEUE_CAP ? "#fca5a5" : "#c7d4f2");
+  if (S.qos) {
+    ctx.fillStyle = "rgba(239,68,68,0.10)"; roundRect(ctx, 136, LANE_Y - 29, HEAD_X - 130, 20, 8); ctx.fill();
+    ctx.font = "12px Malgun Gothic, sans-serif"; ctx.fillStyle = "#fca5a5"; ctx.textAlign = "left";
+    ctx.fillText("경보 우선 차선", 142, LANE_Y - 14);
+  }
+  // 큐 채움 막대 (아래)
+  const fillW = (HEAD_X - 130) * Math.min(1, n / QUEUE_CAP);
+  ctx.fillStyle = n >= QUEUE_CAP ? "rgba(239,68,68,0.7)" : "rgba(34,211,238,0.5)";
+  ctx.fillRect(HEAD_X + 12 - fillW, LANE_Y + 30, fillW, 3);
+
+  // 큐 안의 패킷: 목표 자리로 부드럽게 이동 (QoS ON이면 경보가 맨 앞자리로 앞지름)
+  const order = S.qos ? alarmQ.concat(videoQ) : mergeBySeq(videoQ, alarmQ);
+  const k = Math.min(1, dt * 9);
+  order.forEach((p, i) => {
+    const tx = HEAD_X - 8 - i * SLOT;
+    const ty = S.qos ? (p.kind === "alarm" ? LANE_Y - 18 : LANE_Y + 6) : LANE_Y;
+    p.vx += (tx - p.vx) * k; p.vy += (ty - p.vy) * k;
+  });
+  for (const p of order) if (p.kind === "video") dotV(ctx, p.vx, p.vy, p.color);
+  for (const p of order) if (p.kind === "alarm") dotA(ctx, p.vx, p.vy, t);
+  // 지금 전송 중인 패킷
+  if (current) current.kind === "alarm" ? dotA(ctx, HEAD_X + 14, LANE_Y, t) : dotV(ctx, HEAD_X + 14, LANE_Y, current.color, 4);
+
+  // 날아가는 패킷
+  for (let i = flying.length - 1; i >= 0; i--) {
+    const f = flying[i], u = (t - f.t0) / (FLY1 + FLY2);
+    if (u >= 1) { if (f.p.kind === "alarm") onAlarmArrive(f.p, t); flying.splice(i, 1); continue; }
+    const [x, y] = pathPoint(Math.max(0, u));
+    f.p.kind === "alarm" ? dotA(ctx, x, y, t) : dotV(ctx, x, y, f.p.color);
+  }
+  // 버려진 패킷: 회색 X가 위로 떠오르며 사라짐
+  for (let i = dropMarks.length - 1; i >= 0; i--) {
+    const m = dropMarks[i], a = (t - m.t0) / 1.0;
+    if (a >= 1 || a < 0) { dropMarks.splice(i, 1); continue; }
+    ctx.strokeStyle = `rgba(148,163,184,${1 - a})`; ctx.lineWidth = 2;
+    const x = m.x, y = m.y - 40 * a - 30;
+    ctx.beginPath(); ctx.moveTo(x - 4, y - 4); ctx.lineTo(x + 4, y + 4); ctx.moveTo(x + 4, y - 4); ctx.lineTo(x - 4, y + 4); ctx.stroke();
+  }
+
+  // 노드 아이콘
+  drawDrone(ctx, 70, LANE_Y, t);
+  drawRelay(ctx, RELAY.x, RELAY.y);
+  drawCenter(ctx, CENTER.x, CENTER.y, t);
+  label(ctx, "드론", 70, 238, "#e6f0ff");
+  label(ctx, "중계 기지국", RELAY.x, 238, "#e6f0ff");
+  label(ctx, "관제센터", CENTER.x, 238, "#e6f0ff");
+  label(ctx, S.qos ? "QoS ON · 경보 패킷이 영상 패킷을 앞질러 먼저 전송" : "QoS OFF · 모든 패킷이 도착 순서대로 줄을 섬 (FIFO)",
+        480, 284, S.qos ? "#86efac" : "#fdba74");
+}
+
+function mergeBySeq(a, b) {      // 두 큐를 도착 순서대로 합치기 (FIFO 화면 표시용)
+  const out = []; let i = 0, j = 0;
+  while (i < a.length || j < b.length) {
+    if (j >= b.length || (i < a.length && a[i].seq < b[j].seq)) out.push(a[i++]); else out.push(b[j++]);
+  }
+  return out;
+}
+function dotV(ctx, x, y, color, r = 2.8) { ctx.fillStyle = color; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); }
+function dotA(ctx, x, y, t) {
+  ctx.fillStyle = "rgba(239,68,68,0.25)"; ctx.beginPath(); ctx.arc(x, y, 9 + 2 * Math.sin(t * 10), 0, 7); ctx.fill();
+  ctx.fillStyle = "#ef4444"; ctx.beginPath(); ctx.arc(x, y, 5.5, 0, 7); ctx.fill();
+  ctx.fillStyle = "#fff"; ctx.fillRect(x - 0.8, y - 3, 1.6, 3.6); ctx.fillRect(x - 0.8, y + 1.4, 1.6, 1.4);
+}
+function label(ctx, text, x, y, color) {
+  ctx.font = "14px Malgun Gothic, sans-serif"; ctx.fillStyle = color; ctx.textAlign = "center"; ctx.fillText(text, x, y);
+}
+function drawDrone(ctx, x, y, t) {
+  ctx.strokeStyle = "#cfe3ff"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(x - 30, y - 20); ctx.lineTo(x + 30, y + 20); ctx.moveTo(x + 30, y - 20); ctx.lineTo(x - 30, y + 20); ctx.stroke();
+  for (const [dx, dy] of [[-30, -20], [30, -20], [-30, 20], [30, 20]]) {
+    // 프로펠러: 회전하는 느낌으로 타원 폭이 변함
+    ctx.strokeStyle = "rgba(165,243,252,0.8)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(x + dx, y + dy, 14 * Math.abs(Math.cos(t * 30 + dx)), 4, 0, 0, 7); ctx.stroke();
+  }
+  ctx.fillStyle = "#1e3a8a"; ctx.strokeStyle = "#cfe3ff"; ctx.lineWidth = 2;
+  roundRect(ctx, x - 14, y - 10, 28, 20, 6); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#22d3ee"; ctx.beginPath(); ctx.arc(x, y + 14, 5, 0, 7); ctx.fill();   // 열화상 카메라
+}
+function drawRelay(ctx, x, y) {
+  ctx.strokeStyle = "#cfe3ff"; ctx.lineWidth = 2; ctx.beginPath();
+  ctx.moveTo(x - 18, y + 60); ctx.lineTo(x, y - 30); ctx.lineTo(x + 18, y + 60);
+  ctx.moveTo(x - 12, y + 30); ctx.lineTo(x + 12, y + 30); ctx.moveTo(x - 6, y); ctx.lineTo(x + 6, y);
+  ctx.moveTo(x - 14, y + 45); ctx.lineTo(x + 9, y + 15); ctx.moveTo(x + 14, y + 45); ctx.lineTo(x - 9, y + 15);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(34,211,238,0.7)";
+  for (const r of [10, 18]) { ctx.beginPath(); ctx.arc(x, y - 30, r, -2.4, -0.7); ctx.stroke(); }
+  ctx.fillStyle = "#22d3ee"; ctx.beginPath(); ctx.arc(x, y - 30, 4, 0, 7); ctx.fill();
+}
+function drawCenter(ctx, x, y, t) {
+  ctx.fillStyle = "#13265a"; ctx.strokeStyle = "#cfe3ff"; ctx.lineWidth = 2;
+  roundRect(ctx, x - 36, y - 40, 72, 100, 6); ctx.fill(); ctx.stroke();
+  // 관제 모니터 (수신 상태에 따라 색 변화)
+  const col = rxState.corrupt ? "#ef4444" : rxState.mode === "freeze" ? "#f59e0b" : "#22c55e";
+  ctx.fillStyle = col; ctx.globalAlpha = 0.85; ctx.fillRect(x - 26, y - 30, 52, 26); ctx.globalAlpha = 1;
+  ctx.fillStyle = "rgba(207,227,255,0.5)";
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) ctx.fillRect(x - 26 + c * 14, y + 6 + r * 14, 8, 8);
+}
+
+/* =====================================================================
+   6. 관제센터 수신 화면 (멈춤·깨짐 효과, 경보 배너)
+   ===================================================================== */
+const rx = document.getElementById("rx"), rctx = rx.getContext("2d");
+const rxVideo = document.createElement("canvas"); rxVideo.width = 480; rxVideo.height = 270;
+const rvctx = rxVideo.getContext("2d");
+let banner = null;    // {d, ok, lost, until}
+
+function onAlarmArrive(p, t) {
+  const a = { t, d: p.delay, ok: p.delay <= ALARM_OK, lost: false };
+  alarmLog.push(a); lastAlarm = a;
+  banner = { ...a, until: t + 3.5 };
+}
+
+function drawRx(t) {
+  // 멈춤 상태가 아니면 새 화면으로 갱신, 멈춤이면 마지막 화면을 그대로 유지
+  if (rxState.mode !== "freeze") rvctx.drawImage(colorCv, 0, 0, TW - 1, TH, 0, 0, 480, 270);
+  rctx.drawImage(rxVideo, 0, 0);
+
+  if (rxState.corrupt) {
+    // 디코딩 오류 흉내 (멈춘 화면 위에도 깨짐이 남음): 가로 줄 밀림 + 초록/자홍색 블록
+    const seed = Math.floor(t * 8);
+    const rnd = i => { const x = Math.sin(seed * 97.13 + i * 13.7) * 43758.5; return x - Math.floor(x); };
+    for (let i = 0; i < 6; i++) {
+      const y = Math.floor(rnd(i) * 250), h = 6 + Math.floor(rnd(i + 20) * 24), sh = (rnd(i + 40) - 0.5) * 80;
+      rctx.drawImage(rxVideo, 0, y, 480, h, sh, y, 480, h);
+    }
+    for (let i = 0; i < 7; i++) {
+      const bx = Math.floor(rnd(i + 60) * 30) * 16, by = Math.floor(rnd(i + 80) * 16) * 16;
+      rctx.fillStyle = i % 2 ? "rgba(255,0,200,0.45)" : "rgba(0,255,120,0.45)";
+      rctx.fillRect(bx, by, 16 * (1 + Math.floor(rnd(i + 90) * 3)), 16);
+    }
+  }
+  if (rxState.mode === "freeze") {
+    rctx.fillStyle = "rgba(5,10,30,0.45)"; rctx.fillRect(0, 0, 480, 270);
+    // 회전하는 대기 표시
+    rctx.strokeStyle = "#f59e0b"; rctx.lineWidth = 4;
+    rctx.beginPath(); rctx.arc(240, 120, 18, t * 6, t * 6 + 4.2); rctx.stroke();
+    rctx.font = "bold 17px Malgun Gothic, sans-serif"; rctx.fillStyle = "#fde68a"; rctx.textAlign = "center";
+    rctx.fillText("수신 지연 · 화면 멈춤", 240, 168);
+  }
+
+  // 상단 정보 띠
+  rctx.fillStyle = "rgba(4,10,30,0.7)"; rctx.fillRect(0, 0, 480, 30);
+  rctx.font = "bold 14px Malgun Gothic, sans-serif"; rctx.textAlign = "left"; rctx.fillStyle = "#e6f0ff";
+  rctx.fillText("관제센터 수신 화면", 10, 20);
+  const st = rxState.mode === "freeze" && rxState.corrupt ? ["멈춤·깨짐", "#ef4444"]
+    : rxState.mode === "freeze" ? ["멈춤", "#f59e0b"] : rxState.corrupt ? ["깨짐", "#ef4444"] : ["정상", "#22c55e"];
+  rctx.fillStyle = st[1]; rctx.beginPath(); rctx.arc(392, 15, 5, 0, 7); rctx.fill();
+  rctx.textAlign = "left"; rctx.fillText(st[0], 402, 20);
+  // 하단: 영상 지연
+  rctx.fillStyle = "rgba(4,10,30,0.7)"; rctx.fillRect(0, 244, 480, 26);
+  rctx.font = "13px Malgun Gothic, sans-serif"; rctx.fillStyle = "#c7d4f2"; rctx.textAlign = "left";
+  rctx.fillText(`영상 지연 ${rxState.latency.toFixed(2)} s · ${CODEC[S.codec].label}`, 10, 262);
+
+  // 경보 배너: 지연이 짧으면 초록, 길거나 유실되면 빨강
+  if (banner && t < banner.until) {
+    const col = banner.ok ? "#16a34a" : "#dc2626";
+    rctx.fillStyle = col; rctx.globalAlpha = 0.92; rctx.fillRect(0, 34, 480, 46); rctx.globalAlpha = 1;
+    rctx.font = "bold 19px Malgun Gothic, sans-serif"; rctx.fillStyle = "#fff"; rctx.textAlign = "center";
+    rctx.fillText(banner.lost ? "경보 패킷 유실 · 큐가 넘쳐 버려짐" : `긴급 경보 수신 · 지연 ${(banner.d * 1000).toFixed(0)} ms`, 240, 64);
+  }
+}
+
+/* =====================================================================
+   7. 최근 10초 지연 그래프
+   ===================================================================== */
+const graph = document.getElementById("graph"), gctx = graph.getContext("2d");
+const Y_MAX = 2.5;
+function drawGraph(t) {
+  const ctx = gctx, W = 640, H = 270, L = 52, R = 14, T = 16, B = 34;
+  const px = tt => L + (tt - (t - 10)) / 10 * (W - L - R);
+  const py = v => T + (1 - Math.min(v, Y_MAX) / Y_MAX) * (H - T - B);
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#0a1636"; roundRect(ctx, 0, 0, W, H, 10); ctx.fill();
+  // 눈금
+  ctx.font = "12px Malgun Gothic, sans-serif"; ctx.textAlign = "right";
+  for (let v = 0; v <= Y_MAX + 1e-9; v += 0.5) {
+    ctx.strokeStyle = "rgba(120,150,210,0.18)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(L, py(v)); ctx.lineTo(W - R, py(v)); ctx.stroke();
+    ctx.fillStyle = "#8ea3cf"; ctx.fillText(`${v.toFixed(1)} s`, L - 6, py(v) + 4);
+  }
+  ctx.textAlign = "center";
+  for (let s = 0; s <= 10; s += 2) ctx.fillText(s === 10 ? "지금" : `-${10 - s}초`, px(t - 10 + s), H - 12);
+  // 기준선
+  dashed(ctx, L, W - R, py(PLAYOUT), "rgba(245,158,11,0.8)", "화면 멈춤 기준 0.5 s");
+  dashed(ctx, L, W - R, py(ALARM_OK), "rgba(34,197,94,0.8)", "경보 허용 0.2 s");
+  // 영상 큐 대기 시간 선 (코덱 색)
+  ctx.lineWidth = 2.5;
+  for (let i = 1; i < qSamples.length; i++) {
+    const a = qSamples[i - 1], b = qSamples[i];
+    if (b.t < t - 10) continue;
+    ctx.strokeStyle = b.c; ctx.beginPath(); ctx.moveTo(px(a.t), py(a.v)); ctx.lineTo(px(b.t), py(b.v)); ctx.stroke();
+  }
+  // 경보 도착 지연 점
+  for (const a of alarmLog) {
+    if (a.t < t - 10) continue;
+    const x = px(a.t);
+    if (a.lost) {
+      ctx.strokeStyle = "#ef4444"; ctx.lineWidth = 2.5; const y = py(Y_MAX) + 6;
+      ctx.beginPath(); ctx.moveTo(x - 5, y - 5); ctx.lineTo(x + 5, y + 5); ctx.moveTo(x + 5, y - 5); ctx.lineTo(x - 5, y + 5); ctx.stroke();
+    } else {
+      ctx.fillStyle = a.ok ? "#22c55e" : "#ef4444"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(x, py(a.d), 6, 0, 7); ctx.fill(); ctx.stroke();
+    }
+  }
+}
+function dashed(ctx, x0, x1, y, color, text) {
+  ctx.save(); ctx.setLineDash([6, 5]); ctx.strokeStyle = color; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke(); ctx.restore();
+  ctx.font = "12px Malgun Gothic, sans-serif"; ctx.fillStyle = color; ctx.textAlign = "right"; ctx.fillText(text, x1 - 4, y - 5);
+}
+
+/* =====================================================================
+   8. 화면 글자·막대 갱신 (DOM)
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const gopEl = $("gop");
+GOP_SEQ.split("").forEach(ch => { const d = document.createElement("div"); d.textContent = ch; gopEl.appendChild(d); });
+
+const FRAME_DESC = {
+  I: "I 프레임 · 화면 전체를 전송 (기준 화면)",
+  P: "P 프레임 · 앞 화면과 달라진 부분만 전송",
+  B: "B 프레임 · 앞뒤 화면을 참고해 차이만 전송",
+};
+function updateGopUI(type) {
+  const c = CODEC[S.codec], cells = gopEl.children;
+  gopEl.classList.toggle("dim", !c.gop);
+  for (let i = 0; i < cells.length; i++) {
+    const on = c.gop && i === frameNo % GOP_SEQ.length;
+    cells[i].className = (on ? "on " : "") + GOP_SEQ[i];
+  }
+  $("ftype").textContent = c.gop ? type : "-";
+  $("fdesc").textContent = c.gop ? FRAME_DESC[type] : "무압축은 GOP 없이 매 프레임 전체를 전송";
+  // 스킵률
+  const avg = analysis.avgSkip.length ? Math.round(analysis.avgSkip.reduce((a, b) => a + b, 0) / analysis.avgSkip.length) : 0;
+  const el = $("skipNum");
+  el.textContent = `${c.gop ? analysis.skip : 0}%`;
+  el.style.color = !c.gop || analysis.type === "I" ? "var(--orange)" : "var(--green)";
+  $("skipNote").textContent = !c.gop ? "무압축: 생략하는 블록 없음"
+    : analysis.type === "I" ? `I 프레임은 전체 전송 · P/B 평균 ${avg}%`
+    : `이번 ${analysis.type} 프레임 · ${GX * GY}개 중 ${GX * GY - analysis.sent}개 생략`;
+}
+
+function renderBars() {
+  const max = 130, link = LINK[S.bw].mbps;
+  $("bars").innerHTML = ["RAW", "H264", "HEVC"].map(k => {
+    const c = CODEC[k], w = c.mbps / max * 100;
+    return `<div class="row ${k === S.codec ? "sel" : ""}">
+      <span>${c.short}</span>
+      <div class="track"><div class="fill" style="width:${w}%;background:${c.color}"></div>
+        <div class="linkmark" style="left:${link / max * 100}%"></div></div>
+      <span class="val">${c.mbps} Mbps</span></div>`;
+  }).join("");
+  const c = CODEC[S.codec];
+  $("barCap").innerHTML = `시안 세로선 = 섹션 B의 현재 링크 ${link} Mbps. ` +
+    (c.mbps > link ? `<span class="bad">${c.short}는 링크보다 커서 그대로는 보낼 수 없음</span>` : `<span class="ok">${c.short}는 링크 안에 들어감</span>`);
+  $("legVideo").style.background = c.color;
+}
+
+function updateStats(t) {
+  // 경보 지연
+  const a = lastAlarm;
+  if (a) {
+    $("stAlarm").textContent = a.lost ? "유실" : `${(a.d * 1000).toFixed(0)} ms`;
+    $("stAlarm").className = "v " + (a.ok ? "ok" : "bad");
+    $("stAlarmS").textContent = a.lost ? "큐가 넘쳐 경보가 버려짐" : a.ok ? "허용 지연 200 ms 이내" : "허용 지연 200 ms 초과";
+  }
+  const qd = queueDelay();
+  $("stQueue").textContent = `${(qd * 1000).toFixed(0)} ms`;
+  $("stQueue").className = "v " + (qd > PLAYOUT ? "bad" : qd > ALARM_OK ? "warn" : "ok");
+  $("stQueueS").textContent = qd > PLAYOUT ? "화면 멈춤 위험" : "큐에서 기다리는 시간";
+  while (dropTimes.length && dropTimes[0] < t - 10) dropTimes.shift();
+  $("stDrop").textContent = dropTimes.length;
+  $("stDrop").className = "v " + (dropTimes.length ? "bad" : "ok");
+  const load = CODEC[S.codec].mbps / LINK[S.bw].mbps * 100;
+  $("stLoad").textContent = `${load.toFixed(0)}%`;
+  $("stLoad").className = "v " + (load > 100 ? "bad" : load > 75 ? "warn" : "ok");
+  $("stLoadS").textContent = `${CODEC[S.codec].mbps} ÷ ${LINK[S.bw].mbps} Mbps` + (load > 100 ? " · 과부하" : "");
+}
+
+/* =====================================================================
+   9. 버튼 연결
+   ===================================================================== */
+function syncButtons() {
+  document.querySelectorAll(".seg").forEach(seg => {
+    const key = seg.dataset.group;
+    seg.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.val === S[key])));
+  });
+  for (const [id, on] of [["blockSw", S.blocks], ["qosSw", S.qos]]) {
+    $(id).setAttribute("aria-pressed", String(on));
+    $(id).querySelector(".state").textContent = on ? "ON" : "OFF";
+  }
+  renderBars();
+  updateGopUI(analysis.type);
+}
+document.querySelectorAll(".seg").forEach(seg => seg.addEventListener("click", e => {
+  const b = e.target.closest("button"); if (!b) return;
+  S[seg.dataset.group] = b.dataset.val; syncButtons();
+}));
+$("blockSw").onclick = () => { S.blocks = !S.blocks; syncButtons(); };
+$("qosSw").onclick = () => { S.qos = !S.qos; syncButtons(); };
+$("alarmBtn").onclick = () => triggerAlarm();
+$("pauseBtn").onclick = () => togglePause();
+
+function togglePause() {
+  S.paused = !S.paused;
+  $("live").classList.toggle("paused", S.paused);
+  $("liveText").textContent = S.paused ? "일시정지됨" : "실시간 시뮬레이션 동작 중";
+  $("pauseText").textContent = S.paused ? "다시 재생" : "일시정지";
+  $("pauseIcon").innerHTML = S.paused
+    ? '<path d="M3 1.5l9 5.5-9 5.5z" fill="currentColor"/>'
+    : '<rect x="2" y="1" width="3.5" height="12" rx="1" fill="currentColor"/><rect x="8.5" y="1" width="3.5" height="12" rx="1" fill="currentColor"/>';
+}
+function flashAlarmBtn() {
+  const b = $("alarmBtn"); b.style.boxShadow = "0 0 0 4px rgba(239,68,68,.45)";
+  setTimeout(() => (b.style.boxShadow = ""), 300);
+}
+document.addEventListener("keydown", e => {
+  if (e.target.closest && e.target.closest("input,textarea")) return;
+  const k = e.key.toLowerCase();
+  if (k === " ") { e.preventDefault(); togglePause(); }
+  else if (k === "1") S.codec = "RAW";
+  else if (k === "2") S.codec = "H264";
+  else if (k === "3") S.codec = "HEVC";
+  else if (k === "b") S.blocks = !S.blocks;
+  else if (k === "q") S.qos = !S.qos;
+  else if (k === "e") { triggerAlarm(); return; }
+  else return;
+  syncButtons();
+});
+
+/* =====================================================================
+   10. 메인 반복 (초당 약 60번)
+   - 시뮬레이션 시계 S.t를 진행하고 → 사건 처리 → 모든 화면을 다시 그림
+   ===================================================================== */
+let lastReal = performance.now();
+let lastScrollInt = 0;      // 마지막으로 그린 화면의 이동량 (블록 분석 기준)
+function loop(now) {
+  const dt = Math.max(0, Math.min(0.1, (now - lastReal) / 1000));   // 탭을 숨겼다 돌아와도 한 번에 크게 건너뛰지 않음
+  lastReal = now;
+  if (!S.paused) {
+    S.t += dt;
+    while (S.t >= nextFrameT) { onFrameTick(nextFrameT); nextFrameT += FRAME_DT; }
+    processNet(S.t);
+    updatePlayback(S.t);
+    if (S.t >= nextSampleT) {
+      qSamples.push({ t: S.t, v: queueDelay(), c: CODEC[S.codec].color });
+      while (qSamples.length && qSamples[0].t < S.t - 11) qSamples.shift();
+      while (alarmLog.length && alarmLog[0].t < S.t - 11) alarmLog.shift();
+      nextSampleT = S.t + 0.1;
+    }
+  }
+  const t = S.t, scroll = scrollAt(t), scrollInt = Math.floor(scroll);  // 정수 부분은 버퍼 이동, 소수 부분은 화면에서 미세 이동
+  drawScene(scrollInt, t);
+  encodeAndColor();
+  lastScrollInt = scrollInt;
+  drawThermal(scroll, scrollInt, t);
+  drawColorbar(hotTemp(t));
+  drawNet(t, S.paused ? 0 : dt);
+  drawRx(t);
+  drawGraph(t);
+  updateStats(t);
+  requestAnimationFrame(loop);
+}
+
+drawStatic(worldCv.getContext("2d"), WX0, WW);   // 정지 배경을 처음 한 번만 그림
+syncButtons();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
