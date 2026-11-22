@@ -77,6 +77,10 @@ kbd{font-family:inherit;font-size:.75rem;border:1px solid var(--line);border-bot
 .switch[aria-pressed="true"] .state{color:var(--cyan)}
 .btn{border:1px solid var(--line);background:#0a1636;border-radius:10px;padding:7px 14px;display:inline-flex;align-items:center;gap:7px}
 .btn:hover{background:#12245a}
+a.btn{text-decoration:none}
+.btn.game{border-color:var(--cyan);color:var(--cyan);background:#0b2140;font-weight:700}
+.btn.game:hover{background:#0f2f57}
+.btn.game:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
 .btn.alarm{border-color:var(--red);color:#ffd9d9;background:#3a1020}
 .btn.alarm:hover{background:#561528}
 .btn.alarm:active{transform:translateY(1px)}
@@ -144,6 +148,10 @@ canvas{display:block;width:100%;height:auto;border-radius:10px;background:#050b1
       <div class="sub">송·배전 설비 감시에서의 영상 압축(HEVC)과 QoS 제어 · 교재 Chapter 09 멀티미디어 통신과 미디어</div>
     </div>
     <div class="status">
+      <a class="btn game" href="drone3d.html">
+        <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="3.5" cy="3.5" r="2"/><circle cx="12.5" cy="3.5" r="2"/><circle cx="3.5" cy="12.5" r="2"/><circle cx="12.5" cy="12.5" r="2"/><path d="M5 5l2 2M11 5L9 7M5 11l2-2M11 11L9 9"/><rect x="6.5" y="6.5" width="3" height="3" rx=".8" fill="currentColor"/></svg>
+        3D 드론 순찰 게임 하기
+      </a>
       <span class="live" id="live"><span class="dot"></span><span id="liveText">실시간 시뮬레이션 동작 중</span></span>
       <button class="btn" id="pauseBtn" title="Space 키로도 전환">
         <svg width="14" height="14" viewBox="0 0 14 14" id="pauseIcon"><rect x="2" y="1" width="3.5" height="12" rx="1" fill="currentColor"/><rect x="8.5" y="1" width="3.5" height="12" rx="1" fill="currentColor"/></svg>

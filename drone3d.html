@@ -1,0 +1,770 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>드론 열화상 순찰: 과열 접속부를 찾아라</title>
+<style>
+:root{
+  --bg:#08112b; --card:#0f1d45; --card2:#132453; --line:#22396f;
+  --text:#e7eefc; --muted:#8ea3cf;
+  --cyan:#22d3ee; --orange:#f59e0b; --green:#22c55e; --red:#ef4444; --raw:#cbd5e1; --amber:#ffc23d;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);
+  font-family:"Malgun Gothic","Apple SD Gothic Neo","Noto Sans KR",system-ui,sans-serif}
+.wrap{max-width:1280px;margin:0 auto;padding:14px}
+#game{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:12px;overflow:hidden;user-select:none;-webkit-user-select:none}
+#game:fullscreen{border-radius:0}
+#scene,#hud{position:absolute;inset:0;width:100%;height:100%;display:block}
+#scene{cursor:grab}
+#scene:active{cursor:grabbing}
+.panel{position:absolute;background:rgba(8,17,43,.72);border:1px solid rgba(34,57,111,.9);border-radius:10px;padding:8px 12px;font-size:clamp(11px,1.15vw,15px);line-height:1.55;pointer-events:none}
+.panel b{font-weight:800}
+#pL{left:12px;top:12px;min-width:150px}
+#pR{right:12px;top:12px;min-width:190px}
+.row{display:flex;justify-content:space-between;gap:14px}
+.row span:first-child{color:var(--muted)}
+#cross{position:absolute;left:50%;top:50%;width:64px;height:64px;transform:translate(-50%,-50%);pointer-events:none}
+#cross::before,#cross::after{content:"";position:absolute;background:rgba(231,238,252,.9)}
+#cross::before{left:31px;top:0;width:2px;height:64px;clip-path:polygon(0 0,100% 0,100% 35%,0 35%,0 65%,100% 65%,100% 100%,0 100%)}
+#cross::after{top:31px;left:0;height:2px;width:64px;clip-path:polygon(0 0,35% 0,35% 100%,0 100%,0 0,65% 0,100% 0,100% 100%,65% 100%)}
+#cross.hot::before,#cross.hot::after{background:var(--red)}
+#temp{position:absolute;left:50%;top:calc(50% + 44px);transform:translateX(-50%);font-weight:800;font-size:clamp(13px,1.5vw,20px);text-shadow:0 1px 3px #000;pointer-events:none;white-space:nowrap}
+#alarmMsg{position:absolute;left:50%;bottom:44px;transform:translateX(-50%);max-width:70%;text-align:center;font-size:clamp(12px,1.25vw,16px);pointer-events:none}
+#help{position:absolute;right:12px;bottom:12px;font-size:clamp(10px,1vw,13px);color:var(--muted)}
+#mini{position:absolute;left:12px;bottom:12px;width:16%;aspect-ratio:1;border-radius:10px;border:1px solid var(--line);background:rgba(8,17,43,.75);pointer-events:none}
+kbd{font-family:inherit;font-size:.85em;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;background:#0b1838;color:var(--text)}
+.overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:12px;overflow:auto;
+  background:radial-gradient(ellipse at center,rgba(8,17,43,.35) 0%,rgba(5,10,28,.82) 75%)}
+.overlay.hidden{display:none}
+#game.menu #hud,#game.menu .panel,#game.menu #cross,#game.menu #temp,#game.menu #mini,#game.menu #help{display:none}
+.menu{width:min(620px,100%);text-align:center}
+.kicker{font-size:clamp(11px,1.1vw,14px);font-weight:800;letter-spacing:.18em;color:var(--cyan)}
+.title{margin:6px 0 6px;font-size:clamp(28px,4.6vw,58px);font-weight:900;line-height:1.1;color:#fff;
+  text-shadow:0 0 18px rgba(255,194,61,.75),0 0 42px rgba(239,68,68,.45)}
+.tag{margin:0 0 16px;color:#d6def3;font-size:clamp(12px,1.35vw,16px);line-height:1.55}
+.pick{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pick button{font-family:inherit;color:var(--text);background:rgba(15,29,69,.85);border:2px solid var(--line);border-radius:14px;padding:12px 6px;cursor:pointer;transition:transform .15s,border-color .15s}
+.pick button:hover{transform:translateY(-2px)}
+.pick .nm{display:block;font-weight:800;font-size:clamp(12px,1.3vw,16px)}
+.pick .lv{display:inline-block;margin:6px 0 4px;padding:2px 10px;border-radius:999px;font-weight:800;font-size:clamp(11px,1.05vw,13px)}
+.pick .mb{display:block;font-size:clamp(10px,.95vw,12px);color:var(--muted)}
+.pick [data-codec="raw"] .lv{background:#3b4256;color:#cbd5e1}
+.pick [data-codec="h264"] .lv{background:#4a3410;color:#fbbf24}
+.pick [data-codec="hevc"] .lv{background:#0f3f29;color:#4ade80}
+.pick button.on[data-codec="raw"]{border-color:var(--raw);box-shadow:0 0 16px rgba(203,213,225,.35)}
+.pick button.on[data-codec="h264"]{border-color:var(--orange);box-shadow:0 0 16px rgba(245,158,11,.45)}
+.pick button.on[data-codec="hevc"]{border-color:var(--green);box-shadow:0 0 16px rgba(34,197,94,.45)}
+.qos{margin:10px auto 0;display:inline-flex;align-items:center;gap:10px;font-family:inherit;font-weight:800;font-size:clamp(12px,1.2vw,15px);color:var(--text);background:none;border:0;cursor:pointer;padding:6px 8px}
+.qos .pill{width:44px;height:24px;border-radius:999px;background:#33415f;position:relative;transition:.2s;flex:none}
+.qos .pill::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.2s}
+.qos.on .pill{background:var(--green)} .qos.on .pill::after{left:23px}
+.go{display:block;margin:12px auto 10px;font-family:inherit;font-weight:900;font-size:clamp(18px,2.4vw,28px);letter-spacing:.08em;color:#1a0f00;
+  background:linear-gradient(180deg,#ffd666,#ff9f1a);border:0;border-radius:16px;padding:12px 56px;cursor:pointer;box-shadow:0 6px 0 #b45309,0 0 30px rgba(255,159,26,.5);animation:pulse 1.6s ease-in-out infinite}
+.go:active{transform:translateY(4px);box-shadow:0 2px 0 #b45309}
+@keyframes pulse{0%,100%{box-shadow:0 6px 0 #b45309,0 0 18px rgba(255,159,26,.35)}50%{box-shadow:0 6px 0 #b45309,0 0 40px rgba(255,159,26,.8)}}
+@media (prefers-reduced-motion:reduce){.go{animation:none}}
+.hint{font-size:clamp(10px,1vw,13px);color:#b8c4e0}
+.tools{margin-top:8px;display:flex;gap:8px;justify-content:center}
+.tools button{font-family:inherit;font-size:clamp(10px,1vw,12px);color:var(--muted);background:rgba(15,29,69,.7);border:1px solid var(--line);border-radius:8px;padding:5px 10px;cursor:pointer}
+.pick button:focus-visible,.qos:focus-visible,.go:focus-visible,.tools button:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}
+.stats3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:0 0 14px}
+.stats3>div{background:rgba(15,29,69,.9);border:1px solid var(--line);border-radius:12px;padding:8px 6px}
+.stats3 .k{font-size:clamp(10px,1vw,12px);color:var(--muted)}
+.stats3 .v{font-size:clamp(18px,2.4vw,30px);font-weight:900}
+table{width:100%;border-collapse:collapse;font-size:clamp(10px,1vw,12px);margin-top:12px;background:rgba(8,17,43,.75);border-radius:10px;overflow:hidden}
+th,td{padding:5px 4px;text-align:center;border-bottom:1px solid var(--line)}
+th{color:var(--muted)}
+td.ok{color:var(--green);font-weight:700} td.bad{color:var(--red);font-weight:700}
+@media (max-width:700px){#help{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div id="game">
+  <canvas id="scene" width="1280" height="720" aria-label="드론 1인칭 열화상 화면"></canvas>
+  <canvas id="hud" width="1280" height="720" aria-hidden="true"></canvas>
+  <div class="panel" id="pL">
+    <div class="row"><span>순찰 시간</span><b id="hT">0.0초</b></div>
+    <div class="row"><span>고도</span><b id="hAlt">-</b></div>
+    <div class="row"><span>속도</span><b id="hSpd">-</b></div>
+    <div class="row"><span>영상</span><b id="hCodec">-</b></div>
+  </div>
+  <div class="panel" id="pR">
+    <div class="row"><span>통로 폭</span><b id="hBw">-</b></div>
+    <div class="row"><span>영상에 필요한 양</span><b id="hReq">-</b></div>
+    <div class="row"><span>화면 지연</span><b id="hLat">-</b></div>
+    <div class="row"><span>초당 도착 장면</span><b id="hFps">-</b></div>
+  </div>
+  <div id="cross"></div>
+  <div id="temp"></div>
+  <canvas id="mini" width="220" height="220"></canvas>
+  <div class="panel" id="alarmMsg">과열 접속부를 찾아 <kbd>F</kbd>로 경보를 보내세요</div>
+  <div id="help"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 · <kbd>Space</kbd>/<kbd>Shift</kbd> 위·아래 · <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> 시야 · <kbd>F</kbd> 경보 · <kbd>R</kbd> 처음으로 · <kbd>P</kbd> 색상</div>
+
+  <div class="overlay" id="ov">
+    <div class="menu">
+      <div class="kicker">전력 ICT · 드론 열화상 순찰</div>
+      <h1 class="title" id="ovTitle">과열 접속부를 찾아라</h1>
+      <p class="tag" id="ovSub">송전선 어딘가 한 곳이 뜨겁게 달아오르고 있다.<br>드론을 띄워 찾아내고, 관제센터에 경보를 보내라!</p>
+      <div id="resultBox"></div>
+      <div class="pick" id="codecSeg" role="group" aria-label="영상 압축 방식">
+        <button data-codec="raw"><span class="nm">무압축</span><span class="lv">불가능</span><span class="mb">747 Mbps</span></button>
+        <button data-codec="h264"><span class="nm">기존 H.264</span><span class="lv">어려움</span><span class="mb">2.75 Mbps</span></button>
+        <button data-codec="hevc"><span class="nm">차세대 HEVC</span><span class="lv">쉬움</span><span class="mb">1.21 Mbps</span></button>
+      </div>
+      <button class="qos" id="qosSw" aria-pressed="false"><span class="pill"></span><span id="qosTxt">경보 우선 전송 (QoS) 끔</span></button>
+      <button class="go" id="startBtn">출동!</button>
+      <div class="hint"><kbd>Enter</kbd> 출동 · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 이동 · <kbd>Space</kbd><kbd>Shift</kbd> 고도 · <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> 시야 · <kbd>F</kbd> 경보</div>
+      <div class="tools"><button id="fsBtn">전체 화면</button><button id="palBtn">색상: 철 무지개</button></div>
+      <table id="runsTbl" hidden>
+        <thead><tr><th>#</th><th>영상</th><th>QoS</th><th>발견</th><th>경보 지연</th><th>총 시간</th><th>결과</th></tr></thead>
+        <tbody id="runs"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+(() => {
+// =============== 설정 ===============
+const CODECS = {
+  raw:  { name: "무압축",      req: 747,  color: "#cbd5e1" },
+  h264: { name: "기존 H.264",  req: 2.75, color: "#f59e0b" },
+  hevc: { name: "차세대 HEVC", req: 1.21, color: "#22c55e" },
+};
+const FPS = 30, GOP = 30, I_RATIO = 3, P_RATIO = (GOP - I_RATIO) / (GOP - 1);
+const MAX_QUEUE_DELAY = 1.0, PROP = 0.03, ALARM_MB = 0.01;
+const HOT_LIMIT = 80, READ_RANGE = 30, TIME_LIMIT = 120;
+const POLE_GAP = 35, POLE_N = 10, POLE_Z0 = 25;
+const W = 1280, H = 720, FOV = 70 * Math.PI / 180, F = (H / 2) / Math.tan(FOV / 2), NEAR = 0.3;
+
+// =============== 열화상 색 ===============
+const IRON = [[8,[6,3,22]],[16,[22,10,60]],[24,[48,18,110]],[32,[100,28,148]],[42,[170,40,130]],[54,[225,80,60]],[66,[250,150,30]],[80,[255,215,70]],[95,[255,255,235]]];
+let pal = "iron";
+function trgb(t) {
+  if (pal === "white") { const v = Math.max(0, Math.min(1, (t - 8) / 82)) ** 0.85 * 255; return [v, v, v]; }
+  const S = IRON;
+  if (t <= S[0][0]) return S[0][1].slice();
+  for (let i = 1; i < S.length; i++) if (t <= S[i][0]) {
+    const [t0, c0] = S[i - 1], [t1, c1] = S[i], f = (t - t0) / (t1 - t0);
+    return [0, 1, 2].map(k => c0[k] + (c1[k] - c0[k]) * f);
+  }
+  return S[S.length - 1][1].slice();
+}
+let FOG = trgb(14);
+function shadeCol(temp, shade, dist) {
+  const rgb = trgb(temp), fog = Math.min(1, Math.max(0, (dist - 60) / 200));
+  const c = rgb.map((v, k) => Math.min(255, v * shade) * (1 - fog) + FOG[k] * fog);
+  return `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`;
+}
+
+// =============== 월드 ===============
+let faces = [], wires = [], conns = [], targets = [], ground = [], gLines = [], WORLD = null;
+function addFace(pts, n, temp, shade = 1) {
+  const c = [0, 1, 2].map(k => pts.reduce((s, p) => s + p[k], 0) / pts.length);
+  faces.push({ pts, n, c, temp, shade });
+}
+function box(cx, cy, cz, sx, sy, sz, temp, top = true) {
+  const x0 = cx - sx / 2, x1 = cx + sx / 2, y0 = cy - sy / 2, y1 = cy + sy / 2, z0 = cz - sz / 2, z1 = cz + sz / 2;
+  if (top) addFace([[x0,y1,z0],[x1,y1,z0],[x1,y1,z1],[x0,y1,z1]], [0,1,0], temp, 1.05);
+  addFace([[x0,y0,z0],[x1,y0,z0],[x1,y1,z0],[x0,y1,z0]], [0,0,-1], temp, 0.92);
+  addFace([[x0,y0,z1],[x0,y1,z1],[x1,y1,z1],[x1,y0,z1]], [0,0,1], temp, 0.86);
+  addFace([[x0,y0,z0],[x0,y1,z0],[x0,y1,z1],[x0,y0,z1]], [-1,0,0], temp, 0.97);
+  addFace([[x1,y0,z0],[x1,y0,z1],[x1,y1,z1],[x1,y1,z0]], [1,0,0], temp, 0.82);
+  if (!top) return;
+}
+// 원뿔대: 아래 반지름 r0, 위 반지름 r1
+function taper(cx, cz, r0, r1, y0, y1, temp, n = 8, cap = true) {
+  for (let i = 0; i < n; i++) {
+    const a0 = i / n * Math.PI * 2, a1 = (i + 1) / n * Math.PI * 2, am = (a0 + a1) / 2;
+    const pts = [[cx + Math.sin(a0) * r0, y0, cz + Math.cos(a0) * r0], [cx + Math.sin(a1) * r0, y0, cz + Math.cos(a1) * r0]];
+    if (r1 > 0.001) pts.push([cx + Math.sin(a1) * r1, y1, cz + Math.cos(a1) * r1], [cx + Math.sin(a0) * r1, y1, cz + Math.cos(a0) * r1]);
+    else pts.push([cx, y1, cz]);
+    const slope = (r0 - r1) / Math.max(0.01, y1 - y0);
+    addFace(pts, [Math.sin(am), slope, Math.cos(am)], temp, 0.78 + 0.27 * (0.5 + 0.5 * Math.cos(am - 0.9)));
+  }
+  if (cap && r1 > 0.001) { const top = []; for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; top.push([cx + Math.sin(a) * r1, y1, cz + Math.cos(a) * r1]); } addFace(top, [0, 1, 0], temp, 1.05); }
+}
+// 박공지붕 집
+function house(x, z, w, d, h, t) {
+  const x0 = x - w / 2, x1 = x + w / 2, z0 = z - d / 2, z1 = z + d / 2, hr = h + d * 0.32, o = 0.35;
+  box(x, h / 2, z, w, h, d, t, false);
+  const rt = t - 5; // 지붕은 하늘로 열을 뺏겨 더 차가움
+  addFace([[x0 - o, h - .1, z0 - o], [x1 + o, h - .1, z0 - o], [x1 + o, hr, z], [x0 - o, hr, z]], [0, .8, -1], rt, 1.0);
+  addFace([[x0 - o, h - .1, z1 + o], [x0 - o, hr, z], [x1 + o, hr, z], [x1 + o, h - .1, z1 + o]], [0, .8, 1], rt, 0.9);
+  addFace([[x0, h, z0], [x0, h, z1], [x0, hr, z]], [-1, 0, 0], t, 0.95);
+  addFace([[x1, h, z0], [x1, hr, z], [x1, h, z1]], [1, 0, 0], t, 0.82);
+  // 창문 (실내 열이 새어 나와 따뜻함)
+  const wy0 = h * 0.38, wy1 = h * 0.72;
+  [[z0 - .03, -1], [z1 + .03, 1]].forEach(([zz, s]) => {
+    for (let k = 0; k < 2; k++) {
+      const cx = x0 + w * (k ? 0.72 : 0.28), hw = w * 0.11;
+      addFace(s < 0 ? [[cx - hw, wy0, zz], [cx + hw, wy0, zz], [cx + hw, wy1, zz], [cx - hw, wy1, zz]] : [[cx - hw, wy0, zz], [cx - hw, wy1, zz], [cx + hw, wy1, zz], [cx + hw, wy0, zz]], [0, 0, s], t + 9, 1);
+    }
+  });
+  targets.push({ x, y: h * 0.55, z, temp: t + 9, kind: "주택 창문", r: Math.max(w, d) * 0.5 });
+}
+function building(x, z, w, d, floors, t) {
+  const h = floors * 3.1;
+  box(x, h / 2, z, w, h, d, t);
+  box(x, h + 0.6, z - d * 0.2, 2, 1.2, 2, t + 14); // 옥상 실외기
+  for (const [zz, s] of [[z - d / 2 - .03, -1], [z + d / 2 + .03, 1]]) {
+    for (let f = 0; f < floors; f++) for (let k = 0; k < 4; k++) {
+      const cx = x - w / 2 + w * (k + 0.5) / 4, hw = w * 0.07, y0 = f * 3.1 + 1.0, y1 = y0 + 1.3;
+      const tw = t + 5 + ((f * 7 + k * 3) % 5) * 2;
+      addFace(s < 0 ? [[cx - hw, y0, zz], [cx + hw, y0, zz], [cx + hw, y1, zz], [cx - hw, y1, zz]] : [[cx - hw, y0, zz], [cx - hw, y1, zz], [cx + hw, y1, zz], [cx + hw, y0, zz]], [0, 0, s], tw, 1);
+    }
+  }
+  targets.push({ x, y: h * 0.5, z, temp: t + 8, kind: "건물", r: Math.max(w, d) * 0.5 });
+}
+function tree(x, z, s, t) {
+  taper(x, z, 0.16 * s, 0.12 * s, 0, 1.6 * s, t + 3, 5, false);
+  taper(x, z, 1.5 * s, 0, 1.2 * s, 4.2 * s, t, 7);
+  taper(x, z, 1.1 * s, 0, 3.0 * s, 6.0 * s, t - 1, 7);
+}
+function car(x, z, t) {
+  box(x, 0.55, z, 1.8, 0.7, 4.2, t - 6);
+  box(x, 1.2, z + 0.3, 1.6, 0.6, 2.0, t - 9);
+  addFace([[x - 0.9, 0.92, z - 2.1], [x + 0.9, 0.92, z - 2.1], [x + 0.9, 0.92, z - 0.8], [x - 0.9, 0.92, z - 0.8]], [0, 1, 0], t, 1.1); // 엔진룸 보닛
+  targets.push({ x, y: 0.9, z: z - 1.4, temp: t, kind: "자동차 엔진", r: 1.2 });
+}
+let rnd = Math.random;
+function makeWorld() {
+  faces = []; wires = []; conns = []; targets = []; ground = []; gLines = [];
+  // ---- 도로망: 남북 큰길 + 동서 길, 가운데 사거리 ----
+  const RX0 = -13, RX1 = -5, RZ0 = 196, RZ1 = 204;           // 남북 도로 x 범위, 동서 도로 z 범위
+  const onRoad = (x0, x1, z0, z1) => (x1 > RX0 && x0 < RX1) || (z1 > RZ0 && z0 < RZ1);
+  // 논밭
+  for (let gx = -175; gx < 175; gx += 25) for (let gz = -60; gz < 440; gz += 30) {
+    // 도로와 겹치는 칸은 도로 밖 부분만 남김
+    const xs = [[gx, gx + 25]], zs = [[gz, gz + 30]];
+    const cutX = (lo, hi) => { const out = []; for (const [a, b] of lo) { if (b <= RX0 || a >= RX1) out.push([a, b]); else { if (a < RX0) out.push([a, RX0]); if (b > RX1) out.push([RX1, b]); } } return out; };
+    const cutZ = (lo) => { const out = []; for (const [a, b] of lo) { if (b <= RZ0 || a >= RZ1) out.push([a, b]); else { if (a < RZ0) out.push([a, RZ0]); if (b > RZ1) out.push([RZ1, b]); } } return out; };
+    const t = 19 + rnd() * 6, rows = rnd() < 0.6;
+    for (const [x0, x1] of cutX(xs)) for (const [z0, z1] of cutZ(zs)) {
+      ground.push({ pts: [[x0, 0, z0], [x1, 0, z0], [x1, 0, z1], [x0, 0, z1]], temp: t });
+      if (rows) for (let r = x0 + 2; r < x1 - 0.5; r += 3) gLines.push({ a: [r, 0.01, z0], b: [r, 0.01, z1], temp: t + 2.5 });
+    }
+  }
+  // 남북 도로
+  for (let gz = -60; gz < 440; gz += 30) {
+    const z0 = gz, z1 = gz + 30;
+    ground.push({ pts: [[RX0, 0, z0], [RX1, 0, z0], [RX1, 0, z1], [RX0, 0, z1]], temp: 29 });
+    for (let k = 0; k < 3; k++) { const d0 = gz + k * 10, d1 = d0 + 5; if (d1 > RZ0 - 6 && d0 < RZ1 + 6) continue; gLines.push({ a: [-9, 0.02, d0], b: [-9, 0.02, d1], temp: 34, w: 3 }); }
+  }
+  // 동서 도로 (사거리 칸은 남북 도로가 이미 덮음)
+  for (let gx = -175; gx < 175; gx += 25) {
+    for (const [x0, x1] of [[gx, Math.min(gx + 25, RX0)], [Math.max(gx, RX1), gx + 25]]) {
+      if (x1 - x0 <= 0.01) continue;
+      ground.push({ pts: [[x0, 0, RZ0], [x1, 0, RZ0], [x1, 0, RZ1], [x0, 0, RZ1]], temp: 29 });
+    }
+    for (let k = 0; k < 3; k++) { const d0 = gx + k * 8.3, d1 = d0 + 4.5; if (d1 > RX0 - 6 && d0 < RX1 + 6) continue; gLines.push({ a: [d0, 0.02, 200], b: [d1, 0.02, 200], temp: 34, w: 3 }); }
+  }
+  // 횡단보도와 정지선
+  for (let k = 0; k < 6; k++) {
+    const x = RX0 + 0.8 + k * 1.3; gLines.push({ a: [x, 0.03, RZ0 - 4], b: [x, 0.03, RZ0 - 1], temp: 37, w: 6 }); gLines.push({ a: [x, 0.03, RZ1 + 1], b: [x, 0.03, RZ1 + 4], temp: 37, w: 6 });
+    const z = RZ0 + 0.8 + k * 1.3; gLines.push({ a: [RX0 - 4, 0.03, z], b: [RX0 - 1, 0.03, z], temp: 37, w: 6 }); gLines.push({ a: [RX1 + 1, 0.03, z], b: [RX1 + 4, 0.03, z], temp: 37, w: 6 });
+  }
+
+  // ---- 전신주와 전선로: 사거리에서 북·동·서로 갈라짐 ----
+  const poles = [];
+  // dir "z": 선로가 남북으로 지나감 (완철은 동서 방향), dir "x": 선로가 동서로 지나감
+  function arm(p, dir) {
+    const ax = dir === "z" ? 1 : 0, az = dir === "z" ? 0 : 1, x = p.x, z = p.z, top = 10.2 + (dir === "x" && p.junction ? -0.7 : 0);
+    box(x, top, z, ax ? 3.2 : 0.13, 0.13, az ? 3.2 : 0.13, 34);
+    box(x, top - 1.8, z, ax ? 1.8 : 0.11, 0.11, az ? 1.8 : 0.11, 33);
+    const hv = [];
+    [-1.35, 0, 1.35].forEach(d => {
+      const cx = x + d * ax, cz = z + d * az;
+      taper(cx, cz, 0.075, 0.06, top + 0.07, top + 0.27, 36, 6);
+      taper(cx, cz, 0.15, 0.15, top + 0.22, top + 0.27, 37, 8);
+      const c = { x: cx, y: top + 0.36, z: cz, temp: 31 + rnd() * 6, hot: false };
+      conns.push(c); hv.push(c);
+    });
+    const lv = [-0.75, 0.75].map(d => { const cx = x + d * ax, cz = z + d * az; taper(cx, cz, 0.06, 0.05, top - 1.73, top - 1.55, 35, 6); return [cx, top - 1.55, cz]; });
+    p.arms[dir] = { hv, lv };
+  }
+  function pole(x, z, dirs, junction = false) {
+    const p = { x, z, arms: {}, junction };
+    taper(x, z, 0.21, 0.14, 0, 11, 32, 9);
+    dirs.forEach(d => arm(p, d));
+    poles.push(p); return p;
+  }
+  const lines = [];
+  const NS_X = -2.5, EW_Z = 209;
+  const south = [], north = [], east = [], west = [];
+  [25, 62, 99, 136, 173].forEach((z, i) => south.push(pole(NS_X + (i % 2 ? 0.6 : -0.4), z, ["z"])));
+  const J = pole(NS_X, EW_Z, ["z", "x"], true);
+  [246, 283, 320, 357, 394].forEach((z, i) => north.push(pole(NS_X + (i % 2 ? -0.5 : 0.4), z, ["z"])));
+  [35, 70, 105, 140].forEach((x, i) => east.push(pole(NS_X + x, EW_Z + (i % 2 ? 0.5 : -0.3), ["x"])));
+  [-35, -70, -105, -140].forEach((x, i) => west.push(pole(NS_X + x, EW_Z + (i % 2 ? -0.4 : 0.5), ["x"])));
+  lines.push({ dir: "z", ps: [...south, J, ...north] }, { dir: "x", ps: [J, ...east] }, { dir: "x", ps: [J, ...west] });
+  // 지선
+  poles.forEach((p, i) => { if (i % 3 === 1 && !p.junction) { const d = p.arms.z ? [5.5, 0, -1.5] : [-1.5, 0, 5.5]; wires.push({ a: [p.x, 9.8, p.z], b: [p.x + d[0], 0, p.z + d[2]], temp: 30, w: 4 }); } });
+  // 전선 잇기
+  function span(a, b, sag, temp, w) {
+    const pts = [];
+    for (let s = 0; s <= 10; s++) { const f = s / 10; pts.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f - Math.sin(f * Math.PI) * sag, a[2] + (b[2] - a[2]) * f]); }
+    for (let s = 0; s < 10; s++) wires.push({ a: pts[s], b: pts[s + 1], temp, w });
+  }
+  lines.forEach(L => {
+    for (let i = 0; i < L.ps.length - 1; i++) {
+      const A = L.ps[i].arms[L.dir], B = L.ps[i + 1].arms[L.dir];
+      for (let k = 0; k < 3; k++) span([A.hv[k].x, A.hv[k].y, A.hv[k].z], [B.hv[k].x, B.hv[k].y, B.hv[k].z], 1.0, 41, 9);
+      for (let k = 0; k < 2; k++) span(A.lv[k], B.lv[k], 0.8, 37, 7);
+    }
+  });
+  // 사거리 전신주: 남북 선로와 동서 선로를 잇는 점퍼선
+  for (let k = 0; k < 3; k++) span([J.arms.z.hv[k].x, J.arms.z.hv[k].y, J.arms.z.hv[k].z], [J.arms.x.hv[k].x, J.arms.x.hv[k].y, J.arms.x.hv[k].z], 0.25, 40, 5);
+
+  // ---- 주상변압기 (따뜻한 미끼) 3대 ----
+  const plain = poles.filter(p => !p.junction);
+  const pickN = (arr, n) => { const c = arr.slice(), out = []; while (out.length < n && c.length) out.push(c.splice(Math.floor(rnd() * c.length), 1)[0]); return out; };
+  pickN(plain.filter((p, i) => i > 1), 3).forEach(p => {
+    const t = 50 + rnd() * 8, ox = p.arms.z ? 0.55 : 0, oz = p.arms.z ? 0 : 0.55, bx = p.x + ox, bz = p.z + oz;
+    taper(bx, bz, 0.38, 0.38, 6.7, 7.9, t, 10);
+    taper(bx, bz, 0.42, 0.40, 7.9, 8.0, t - 4, 10);
+    const hv = (p.arms.z || p.arms.x).hv;
+    [-0.15, 0.15].forEach((d, k) => { const tx = bx + d * (p.arms.z ? 1 : 0), tz = bz + d * (p.arms.z ? 0 : 1); taper(tx, tz, 0.05, 0.04, 8.0, 8.3, t - 6, 5); wires.push({ a: [tx, 8.3, tz], b: [hv[k * 2].x, hv[k * 2].y, hv[k * 2].z], temp: 38, w: 2 }); });
+    targets.push({ x: bx, y: 7.3, z: bz, temp: t, kind: "변압기", r: 0.7 });
+  });
+  // ---- 미끼 접속부 2개, 과열 접속부 1개 (출발점 근처 3개 전신주 제외) ----
+  const far = conns.filter(c => !(Math.abs(c.x - NS_X) < 3 && c.z < 110));
+  pickN(far, 2).forEach(c => c.temp = 57 + rnd() * 7);
+  const hc = far[Math.floor(rnd() * far.length)];
+  hc.temp = 92 + rnd() * 5; hc.hot = true;
+  conns.forEach(c => targets.push({ ...c, ref: c, kind: "접속부", r: 0.35 }));
+
+  // ---- 마을 ----
+  const blocked = [];
+  const clear = (x, z, r) => {
+    if (x + r > RX0 - 1 && x - r < RX1 + 1) return false;
+    if (z + r > RZ0 - 1 && z - r < RZ1 + 1) return false;
+    if (Math.abs(x - NS_X) < r + 3) return false;
+    if (Math.abs(z - EW_Z) < r + 3 && x > -150 && x < 145) return false;
+    return !blocked.some(([bx, bz, br]) => Math.hypot(bx - x, bz - z) < br + r + 1);
+  };
+  [[-24, 48], [12, 80], [-27, 140], [14, 160], [-24, 262], [13, 300], [-26, 372], [-45, 228], [-80, 186], [-118, 228], [48, 186], [85, 230], [122, 186], [-60, 120], [60, 300]].forEach(([x, z]) => {
+    const hx = x + (rnd() - 0.5) * 3, hz = z + (rnd() - 0.5) * 6;
+    if (!clear(hx, hz, 5)) return;
+    house(hx, hz, 7 + rnd() * 2, 6 + rnd(), 3.2 + rnd() * 0.6, 30 + rnd() * 5); blocked.push([hx, hz, 5]);
+  });
+  [[-30, 222, 3], [30, 182, 4], [-38, 330, 4], [40, 120, 3]].forEach(([x, z, f]) => { if (clear(x, z, 8)) { building(x, z, 12, 10, f, 29 + rnd() * 2); blocked.push([x, z, 8]); } });
+  // 자동차: 큰길과 동서 길, 사거리에서 신호 대기 중인 차
+  car(-11, 70, 47); car(-7, 250, 45); car(-11, 189, 48);
+  [[40, 198], [-60, 202]].forEach(([x, z]) => {
+    box(x, 0.55, z, 4.2, 0.7, 1.8, 41); box(x + 0.3, 1.2, z, 2.0, 0.6, 1.6, 38);
+    addFace([[x - 2.1, 0.92, z - 0.9], [x - 0.8, 0.92, z - 0.9], [x - 0.8, 0.92, z + 0.9], [x - 2.1, 0.92, z + 0.9]], [0, 1, 0], 46, 1.1);
+    targets.push({ x: x - 1.4, y: 0.9, z, temp: 46, kind: "자동차 엔진", r: 1.2 });
+  });
+  // ---- 나무 ----
+  for (let i = 0; i < 70; i++) {
+    const x = (rnd() - 0.5) * 330, z = -30 + rnd() * 440;
+    if (!clear(x, z, 2.5)) continue;
+    tree(x, z, 0.8 + rnd() * 0.7, 21 + rnd() * 4); blocked.push([x, z, 2]);
+  }
+  WORLD = { lines, J };
+  return poles;
+}
+// 먼 산 능선 (각도별 높이)
+const RIDGE = Array.from({ length: 97 }, (_, i) => { const a = i / 96 * Math.PI * 2; return 55 + 35 * Math.sin(a * 3 + 1) + 18 * Math.sin(a * 7 + 2) + 9 * Math.sin(a * 13); });
+
+// =============== 카메라 변환 ===============
+let cam = { x: 0, y: 6, z: 0, yaw: 0, pitch: 0 }, cs = 1, sn = 0, cp = 1, sp = 0;
+function setCam(p) { cam = p; cs = Math.cos(p.yaw); sn = Math.sin(p.yaw); cp = Math.cos(p.pitch); sp = Math.sin(p.pitch); }
+function toCam(p) {
+  const dx = p[0] - cam.x, dy = p[1] - cam.y, dz = p[2] - cam.z;
+  const x1 = cs * dx - sn * dz, z1 = sn * dx + cs * dz;
+  return [x1, cp * dy - sp * z1, sp * dy + cp * z1];
+}
+function proj(v) { return [W / 2 + F * v[0] / v[2], H / 2 - F * v[1] / v[2]]; }
+function clipPoly(vs) {
+  const out = [];
+  for (let i = 0; i < vs.length; i++) {
+    const a = vs[i], b = vs[(i + 1) % vs.length], ai = a[2] >= NEAR, bi = b[2] >= NEAR;
+    if (ai) out.push(a);
+    if (ai !== bi) { const f = (NEAR - a[2]) / (b[2] - a[2]); out.push([a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, NEAR]); }
+  }
+  return out;
+}
+
+// =============== 장면 그리기 ===============
+const sc = document.getElementById("scene"), sg = sc.getContext("2d");
+const buf = document.createElement("canvas"); buf.width = W; buf.height = H; const g = buf.getContext("2d");
+// 센서 노이즈 무늬
+const noiseC = document.createElement("canvas"); noiseC.width = noiseC.height = 256;
+{ const nc = noiseC.getContext("2d"), id = nc.createImageData(256, 256); for (let i = 0; i < id.data.length; i += 4) { const v = Math.random() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 255; } nc.putImageData(id, 0, 0); }
+function present() { sg.filter = "blur(0.7px)"; sg.drawImage(buf, 0, 0); sg.filter = "none"; }
+function drawScene(pose) {
+  setCam(pose);
+  // 하늘 (위로 갈수록 차가움)
+  const hy = H / 2 + F * Math.tan(cam.pitch);
+  const sky = g.createLinearGradient(0, Math.min(hy, H) - 420, 0, Math.max(0, hy));
+  const c0 = trgb(4), c1 = trgb(14);
+  sky.addColorStop(0, `rgb(${c0[0] | 0},${c0[1] | 0},${c0[2] | 0})`); sky.addColorStop(1, `rgb(${c1[0] | 0},${c1[1] | 0},${c1[2] | 0})`);
+  g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  // 먼 산
+  const ridge = [];
+  for (let i = 0; i < RIDGE.length; i++) { const a = i / 96 * Math.PI * 2; ridge.push(toCam([cam.x + Math.sin(a) * 1500, RIDGE[i], cam.z + Math.cos(a) * 1500])); }
+  g.fillStyle = shadeCol(15.5, 1, 0); g.beginPath(); let open = false;
+  for (let i = 0; i < ridge.length - 1; i++) {
+    const a = ridge[i], b = ridge[i + 1];
+    if (a[2] < 5 || b[2] < 5) continue;
+    const pa = proj(a), pb = proj(b), base = proj([a[0], a[1] - 400, a[2]]), base2 = proj([b[0], b[1] - 400, b[2]]);
+    g.moveTo(pa[0], pa[1]); g.lineTo(pb[0], pb[1]); g.lineTo(base2[0], base2[1]); g.lineTo(base[0], base[1]); g.closePath();
+  }
+  g.fill();
+  // 땅
+  const R = 600, gq = clipPoly([[cam.x - R, 0, cam.z - R], [cam.x + R, 0, cam.z - R], [cam.x + R, 0, cam.z + R], [cam.x - R, 0, cam.z + R]].map(toCam));
+  if (gq.length > 2) { g.fillStyle = shadeCol(19, 1, 120); fillPoly(gq); }
+  const gs = [];
+  for (const q of ground) {
+    const d = Math.hypot(q.pts[0][0] + 12.5 - cam.x, q.pts[0][2] + 15 - cam.z);
+    if (d > 280) continue;
+    gs.push({ q, d });
+  }
+  gs.sort((p, q) => q.d - p.d);
+  for (const { q, d } of gs) { const poly = clipPoly(q.pts.map(toCam)); if (poly.length > 2) { g.fillStyle = shadeCol(q.temp, 1, d); fillPoly(poly); } }
+  for (const l of gLines) {
+    const d = Math.hypot((l.a[0] + l.b[0]) / 2 - cam.x, cam.y, (l.a[2] + l.b[2]) / 2 - cam.z); if (d > 160) continue;
+    let a = toCam(l.a), b = toCam(l.b); if (a[2] < NEAR && b[2] < NEAR) continue;
+    if (a[2] < NEAR) a = lerpNear(b, a); else if (b[2] < NEAR) b = lerpNear(a, b);
+    const pa = proj(a), pb = proj(b);
+    g.strokeStyle = shadeCol(l.temp, 1, d); g.lineWidth = Math.max(1, (l.w || 1.5) * 4 / d);
+    g.beginPath(); g.moveTo(pa[0], pa[1]); g.lineTo(pb[0], pb[1]); g.stroke();
+  }
+  // 면, 전선, 접속부를 깊이순으로
+  const items = [];
+  for (const f of faces) {
+    const vx = cam.x - f.c[0], vy = cam.y - f.c[1], vz = cam.z - f.c[2];
+    if (f.n[0] * vx + f.n[1] * vy + f.n[2] * vz <= 0) continue;
+    const cv = f.pts.map(toCam);
+    if (cv.every(v => v[2] < NEAR)) continue;
+    if (cv.every(v => v[0] > v[2] * 1.3 + 1) || cv.every(v => v[0] < -v[2] * 1.3 - 1) || cv.every(v => v[1] > v[2] * 0.75 + 1) || cv.every(v => v[1] < -v[2] * 0.75 - 1)) continue;
+    const d = Math.hypot(vx, vy, vz);
+    if (d > 300) continue;
+    items.push({ z: d, f, cv });
+  }
+  for (const w of wires) {
+    const a = toCam(w.a), b = toCam(w.b);
+    if (a[2] < NEAR && b[2] < NEAR) continue;
+    const m = [(w.a[0] + w.b[0]) / 2 - cam.x, (w.a[1] + w.b[1]) / 2 - cam.y, (w.a[2] + w.b[2]) / 2 - cam.z];
+    items.push({ z: Math.hypot(...m), w, a, b });
+  }
+  for (const c of conns) {
+    const v = toCam([c.x, c.y, c.z]); if (v[2] < NEAR) continue;
+    items.push({ z: Math.hypot(c.x - cam.x, c.y - cam.y, c.z - cam.z) - 0.3, c, v });
+  }
+  items.sort((p, q) => q.z - p.z);
+  for (const it of items) {
+    if (it.f) {
+      const poly = clipPoly(it.cv); if (poly.length < 3) continue;
+      g.fillStyle = shadeCol(it.f.temp, it.f.shade, it.z);
+      g.beginPath(); poly.map(proj).forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.fill();
+    } else if (it.w) {
+      let a = it.a, b = it.b;
+      if (a[2] < NEAR) a = lerpNear(b, a); else if (b[2] < NEAR) b = lerpNear(a, b);
+      const pa = proj(a), pb = proj(b);
+      g.strokeStyle = shadeCol(it.w.temp, 1, it.z); g.lineWidth = Math.max(1, (it.w.w || 9) / it.z);
+      g.beginPath(); g.moveTo(pa[0], pa[1]); g.lineTo(pb[0], pb[1]); g.stroke();
+    } else if (it.c) {
+      const c = it.c, p = proj(it.v), t = c.hot ? c.temp + Math.sin(pose.t * 9) * 2.5 : c.temp;
+      const r = Math.max(1.5, F * 0.11 / it.v[2]);
+      if (t > 45) {
+        const gr = r * (t > 85 ? 7 : 3.5), rg = g.createRadialGradient(p[0], p[1], r * 0.5, p[0], p[1], gr);
+        const col = trgb(t), fog = Math.min(1, Math.max(0, (it.z - 60) / 200)), al = (t > 85 ? 0.85 : 0.6) * (1 - fog);
+        rg.addColorStop(0, `rgba(${col[0] | 0},${col[1] | 0},${col[2] | 0},${al})`); rg.addColorStop(1, `rgba(${col[0] | 0},${col[1] | 0},${col[2] | 0},0)`);
+        g.fillStyle = rg; g.beginPath(); g.arc(p[0], p[1], gr, 0, Math.PI * 2); g.fill();
+      }
+      g.fillStyle = shadeCol(t, 1.1, it.z); g.beginPath(); g.arc(p[0], p[1], r, 0, Math.PI * 2); g.fill();
+    }
+  }
+}
+function fillPoly(poly) { g.beginPath(); poly.map(proj).forEach((p, i) => i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])); g.closePath(); g.fill(); }
+function lerpNear(a, b) { const f = (NEAR - a[2]) / (b[2] - a[2]); return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, NEAR]; }
+function gridLine(p, q) {
+  let a = toCam(p), b = toCam(q);
+  if (a[2] < NEAR && b[2] < NEAR) return;
+  if (a[2] < NEAR) a = lerpNear(b, a); else if (b[2] < NEAR) b = lerpNear(a, b);
+  const pa = proj(a), pb = proj(b);
+  g.strokeStyle = "rgba(90,50,150,.35)"; g.beginPath(); g.moveTo(pa[0], pa[1]); g.lineTo(pb[0], pb[1]); g.stroke();
+}
+
+// =============== 조준 ===============
+function aimAt(pose) {
+  setCam(pose);
+  let best = null;
+  for (const tg of targets) {
+    const v = toCam([tg.x, tg.y, tg.z]); if (v[2] < NEAR) continue;
+    const ang = Math.atan2(Math.hypot(v[0], v[1]), v[2]);
+    const dist = Math.hypot(tg.x - pose.x, tg.y - pose.y, tg.z - pose.z);
+    const lim = Math.max(Math.atan2(tg.r, dist), 0.025);
+    if (ang < lim && (!best || dist < best.dist)) {
+      const temp = tg.ref ? (tg.ref.hot ? tg.ref.temp + Math.sin(pose.t * 9) * 2.5 : tg.ref.temp) : tg.temp;
+      best = { ang, dist, temp, kind: tg.kind, tg };
+    }
+  }
+  return best;
+}
+
+// =============== 무선 링크 ===============
+let noise = 0;
+function bandwidth(t) {
+  noise += (Math.random() - 0.5) * 0.08; noise *= 0.98;
+  return Math.min(3.4, Math.max(0.8, 2.0 + 0.8 * Math.sin(t * 0.7) + 0.4 * Math.sin(t * 2.3 + 1) + noise));
+}
+
+// =============== 상태 ===============
+let codec = "h264", qos = false, running = false;
+let simT = 0, drone, vel, poles;
+let queue, alarmQ, inflight, pending, display, broken, frameAcc, frameIdx, arrivals, alarm, penalty, foundAt, curBw = 2;
+let needRender = true;
+const keys = {};
+const runs = [];
+
+function reset() {
+  rnd = Math.random;
+  poles = makeWorld();
+  drone = { x: poles[0].x + 4, y: 7, z: 2, yaw: 0, pitch: -0.05 };
+  vel = { x: 0, y: 0, z: 0 };
+  queue = []; alarmQ = []; inflight = null; pending = []; broken = false;
+  frameAcc = 0; frameIdx = 0; arrivals = []; alarm = null; penalty = 0; foundAt = null; simT = 0; noise = 0;
+  display = { t: 0, ...drone, isI: true }; needRender = true;
+}
+function queueDelay() { let mb = inflight ? inflight.left : 0; for (const f of queue) mb += f.left; return mb / curBw; }
+
+function step(dt) {
+  simT += dt; curBw = bandwidth(simT);
+  // ----- 드론 조종 -----
+  const yawIn = (keys.ArrowLeft ? -1 : 0) + (keys.ArrowRight ? 1 : 0);
+  const pitIn = (keys.ArrowUp ? 1 : 0) + (keys.ArrowDown ? -1 : 0);
+  drone.yaw += yawIn * 1.6 * dt;
+  drone.pitch = Math.max(-1.0, Math.min(0.6, drone.pitch + pitIn * 1.0 * dt));
+  const fw = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), st = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+  const up = (keys.Space ? 1 : 0) - (keys.ShiftLeft || keys.ShiftRight ? 1 : 0);
+  const ax = Math.sin(drone.yaw) * fw + Math.cos(drone.yaw) * st, az = Math.cos(drone.yaw) * fw - Math.sin(drone.yaw) * st;
+  const A = 24, damp = Math.exp(-1.9 * dt);
+  vel.x = (vel.x + ax * A * dt) * damp; vel.z = (vel.z + az * A * dt) * damp; vel.y = (vel.y + up * 12 * dt) * Math.exp(-3 * dt);
+  const sp = Math.hypot(vel.x, vel.z); if (sp > 12) { vel.x *= 12 / sp; vel.z *= 12 / sp; }
+  drone.x += vel.x * dt; drone.z += vel.z * dt; drone.y = Math.max(1.2, Math.min(40, drone.y + vel.y * dt));
+  drone.z = Math.max(-40, Math.min(420, drone.z)); drone.x = Math.max(-170, Math.min(170, drone.x));
+  // ----- 영상 장면 만들기 -----
+  frameAcc += dt;
+  const avg = CODECS[codec].req / FPS;
+  while (frameAcc >= 1 / FPS) {
+    frameAcc -= 1 / FPS;
+    const isI = frameIdx % GOP === 0, size = avg * (isI ? I_RATIO : P_RATIO);
+    if (queueDelay() > MAX_QUEUE_DELAY) broken = true;
+    else queue.push({ snap: { t: simT, ...drone, isI }, left: size });
+    frameIdx++;
+  }
+  // ----- 링크로 보내기 -----
+  let budget = curBw * dt;
+  while (budget > 1e-12) {
+    if (qos && alarmQ.length) {
+      const a = alarmQ[0], u = Math.min(budget, a.left); a.left -= u; budget -= u;
+      if (a.left <= 1e-9) { alarmQ.shift(); if (alarm) alarm.arriveAt = simT + PROP; }
+      continue;
+    }
+    if (!inflight) { inflight = queue.shift() || null; if (!inflight) break; }
+    const u = Math.min(budget, inflight.left); inflight.left -= u; budget -= u;
+    if (inflight.left <= 1e-9) {
+      const f = inflight; inflight = null;
+      if (f.alarm) { if (alarm) alarm.arriveAt = simT + PROP; }
+      else pending.push({ at: simT + PROP, snap: f.snap });
+    }
+  }
+  while (pending.length && pending[0].at <= simT) {
+    const d = pending.shift();
+    if (d.snap.t >= display.t) { display = d.snap; needRender = true; }
+    if (d.snap.isI) broken = false;
+    arrivals.push(simT);
+  }
+  while (arrivals.length && simT - arrivals[0] > 1) arrivals.shift();
+  if (alarm && alarm.arriveAt != null && simT >= alarm.arriveAt) finish(true);
+  else if (simT > TIME_LIMIT) finish(false, "시간 초과");
+}
+
+// =============== 경보 ===============
+const msg = document.getElementById("alarmMsg");
+function sendAlarm() {
+  if (!running || alarm) return;
+  const a = aimAt(display);
+  if (!a) { penalty += 3; msg.innerHTML = `<b style="color:#ef4444">오경보</b>: 조준한 곳에 설비가 없습니다 (+3초)`; return; }
+  if (a.dist > READ_RANGE) { msg.innerHTML = `<b style="color:#ffc23d">너무 멉니다</b>: ${READ_RANGE} m 이내로 다가가세요`; return; }
+  if (a.temp < HOT_LIMIT) { penalty += 3; msg.innerHTML = `<b style="color:#ef4444">오경보</b>: ${a.kind} ${a.temp.toFixed(0)}°C는 정상 범위입니다 (+3초)`; return; }
+  foundAt = simT; alarm = { sentAt: simT, arriveAt: null };
+  if (qos) { alarmQ.push({ left: ALARM_MB }); msg.innerHTML = `<b style="color:#22d3ee">경보 전송 중</b>: 우선 차선으로 앞질러 갑니다`; }
+  else if (queueDelay() > MAX_QUEUE_DELAY) { alarm = null; foundAt = null; msg.innerHTML = `<b style="color:#ef4444">경보 유실</b>: 대기열이 넘쳐 버려졌습니다. 다시 보내세요`; }
+  else { queue.push({ alarm: true, left: ALARM_MB }); msg.innerHTML = `<b style="color:#ffc23d">경보 전송 중</b>: 영상 장면 ${queue.length - 1}개 뒤에서 기다리는 중`; }
+}
+
+// =============== HUD ===============
+const hud = document.getElementById("hud"), h = hud.getContext("2d");
+const mini = document.getElementById("mini"), m = mini.getContext("2d");
+const $ = id => document.getElementById(id);
+const cross = $("cross"), tempEl = $("temp");
+let noisePat = null;
+function drawHUD() {
+  h.clearRect(0, 0, W, H);
+  // 열화상 센서 느낌: 노이즈 + 가장자리 어둡게
+  if (!noisePat) noisePat = h.createPattern(noiseC, "repeat");
+  h.save(); h.globalAlpha = 0.07; h.translate(Math.random() * 256, Math.random() * 256); h.fillStyle = noisePat; h.fillRect(-256, -256, W + 512, H + 512); h.restore();
+  const vg = h.createRadialGradient(W / 2, H / 2, H * 0.35, W / 2, H / 2, H * 0.95);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,.55)"); h.fillStyle = vg; h.fillRect(0, 0, W, H);
+  h.fillStyle = "rgba(231,238,252,.8)"; h.font = "bold 14px Malgun Gothic, sans-serif"; h.textAlign = "right";
+  h.fillText(pal === "iron" ? "열화상 · 철 무지개" : "열화상 · 흰색이 뜨거움", W - 30, 180);
+  // 뷰파인더 모서리
+  // 온도 막대
+  for (let i = 0; i < 160; i++) { const c = trgb(95 - i * 0.53); h.fillStyle = `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`; h.fillRect(W - 60, 190 + i * 2, 14, 2.2); }
+  h.fillStyle = "#e7eefc"; h.font = "bold 15px Malgun Gothic, sans-serif"; h.textAlign = "right";
+  h.fillText("95°C", W - 66, 200); h.fillText("10°C", W - 66, 510);
+  if (broken && running) {
+    let s = Math.floor(display.t * 7) * 9301 + 7;
+    for (let i = 0; i < 22; i++) {
+      s = (s * 9301 + 49297) % 233280; const x = s / 233280 * W; s = (s * 9301 + 49297) % 233280; const y = s / 233280 * H;
+      h.fillStyle = i % 3 ? "rgba(120,130,160,.55)" : "rgba(40,50,80,.7)"; h.fillRect(Math.floor(x / 64) * 64, Math.floor(y / 64) * 64, 64, 64);
+    }
+    h.fillStyle = "#ef4444"; h.font = "bold 20px Malgun Gothic, sans-serif"; h.textAlign = "left";
+    h.fillText("장면 유실: 다음 I 프레임까지 화면이 깨집니다", 40, H - 70);
+  }
+  const frozen = running && (!arrivals.length || simT - arrivals[arrivals.length - 1] > 0.35);
+  if (frozen) {
+    h.fillStyle = "rgba(8,17,43,.78)"; h.fillRect(W / 2 - 150, H / 2 + 90, 300, 50);
+    h.fillStyle = "#ffc23d"; h.font = "bold 22px Malgun Gothic, sans-serif"; h.textAlign = "center";
+    h.fillText(frameIdx && !arrivals.length && display.t === 0 ? "첫 화면 수신 대기 중" : "화면 멈춤: 수신 대기", W / 2, H / 2 + 123);
+  }
+  // 조준 온도
+  const a = aimAt(display);
+  if (a && a.dist <= READ_RANGE) {
+    const hot = a.temp >= HOT_LIMIT;
+    cross.classList.toggle("hot", hot);
+    tempEl.innerHTML = `<span style="color:${hot ? "#ef4444" : "#e7eefc"}">${a.kind} ${a.temp.toFixed(0)}°C</span> <span style="color:#8ea3cf">· ${a.dist.toFixed(0)} m</span>`;
+  } else if (a) { cross.classList.remove("hot"); tempEl.innerHTML = `<span style="color:#8ea3cf">${a.kind} · ${a.dist.toFixed(0)} m (30 m 안으로)</span>`; }
+  else { cross.classList.remove("hot"); tempEl.textContent = ""; }
+  // 미니맵 (드론 위치는 작은 위치 정보라 바로 도착)
+  m.clearRect(0, 0, 220, 220);
+  const sx = x => 110 + (x - drone.x) * 0.9, sz = z => 110 - (z - drone.z) * 0.9;
+  m.strokeStyle = "rgba(142,163,207,.5)"; m.lineWidth = 2; m.beginPath();
+  m.strokeStyle = "rgba(142,163,207,.18)"; m.lineWidth = 9;
+  m.beginPath(); m.moveTo(sx(-9), sz(-60)); m.lineTo(sx(-9), sz(440)); m.moveTo(sx(-175), sz(200)); m.lineTo(sx(175), sz(200)); m.stroke();
+  m.strokeStyle = "rgba(142,163,207,.6)"; m.lineWidth = 2;
+  WORLD.lines.forEach(L => { m.beginPath(); L.ps.forEach((p, i) => i ? m.lineTo(sx(p.x), sz(p.z)) : m.moveTo(sx(p.x), sz(p.z))); m.stroke(); });
+  poles.forEach(p => { m.fillStyle = "#8ea3cf"; m.fillRect(sx(p.x) - 3, sz(p.z) - 3, 6, 6); });
+  m.save(); m.translate(110, 110); m.rotate(drone.yaw);
+  m.fillStyle = "#ffc23d"; m.beginPath(); m.moveTo(0, -10); m.lineTo(7, 8); m.lineTo(0, 4); m.lineTo(-7, 8); m.closePath(); m.fill(); m.restore();
+  m.save(); m.translate(sx(display.x), sz(display.z)); m.rotate(display.yaw);
+  m.strokeStyle = "#22d3ee"; m.lineWidth = 2; m.beginPath(); m.moveTo(0, -10); m.lineTo(7, 8); m.lineTo(0, 4); m.lineTo(-7, 8); m.closePath(); m.stroke(); m.restore();
+  m.fillStyle = "#8ea3cf"; m.font = "12px Malgun Gothic, sans-serif"; m.textAlign = "left";
+  m.fillText("노랑 실제 · 파랑 화면", 8, 212);
+  // 패널
+  $("hT").textContent = simT.toFixed(1) + "초";
+  $("hAlt").textContent = drone.y.toFixed(1) + " m";
+  $("hSpd").textContent = Math.hypot(vel.x, vel.z).toFixed(1) + " m/s";
+  $("hCodec").innerHTML = `<span style="color:${CODECS[codec].color}">${CODECS[codec].name}</span>`;
+  $("hBw").textContent = running ? curBw.toFixed(2) + " Mbps" : "-";
+  const req = CODECS[codec].req; $("hReq").innerHTML = `<span style="color:${running && req > curBw ? "#ef4444" : "#e7eefc"}">${req} Mbps</span>`;
+  const lat = simT - display.t; $("hLat").innerHTML = running ? `<span style="color:${lat > 0.5 ? "#ef4444" : "#22c55e"}">${lat.toFixed(2)}초</span>` : "-";
+  $("hFps").textContent = running ? arrivals.length + "장" : "-";
+}
+
+// =============== 흐름 ===============
+const ov = $("ov");
+function showMenu() { ov.classList.remove("hidden"); $("game").classList.add("menu"); }
+function start() {
+  reset(); running = true; ov.classList.add("hidden"); $("game").classList.remove("menu");
+  msg.innerHTML = `과열 접속부를 찾아 <kbd>F</kbd>로 경보를 보내세요`;
+  sc.focus?.();
+}
+function finish(ok, reason) {
+  if (!running) return;
+  running = false;
+  const delay = ok ? alarm.arriveAt - alarm.sentAt : null, total = ok ? alarm.arriveAt + penalty : null;
+  runs.unshift({ codec, qos, found: ok ? foundAt : null, delay, total, ok, reason });
+  $("ovTitle").textContent = ok ? "임무 성공!" : "임무 실패";
+  $("ovSub").innerHTML = ok ? "경보가 관제센터에 도착했다. 정비팀 출동!<br>다른 방식으로도 출동해 기록을 비교해 보자." : (codec === "raw" ? "무압축 영상은 좁은 무선 통로를 지나오지 못했다.<br>압축 방식을 바꿔 다시 출동하자." : "시간 안에 찾지 못했다. 화면이 늦게 도착하면 찾기 어렵다.<br>다시 출동하자.");
+  const dcol = delay != null && delay <= 0.2 ? "#22c55e" : "#ef4444";
+  $("resultBox").innerHTML = ok ? `<div class="stats3">
+    <div><div class="k">발견까지</div><div class="v">${foundAt.toFixed(1)}초</div></div>
+    <div><div class="k">경보 도착 지연</div><div class="v" style="color:${dcol}">${(delay * 1000).toFixed(0)} ms</div></div>
+    <div><div class="k">총 시간${penalty ? ` (오경보 +${penalty}초)` : ""}</div><div class="v" style="color:#ffc23d">${total.toFixed(1)}초</div></div></div>` : "";
+  $("startBtn").textContent = "다시 출동!";
+  $("runsTbl").hidden = false;
+  $("runs").innerHTML = runs.slice(0, 5).map((r, i) => `<tr><td>${runs.length - i}</td>
+    <td style="color:${CODECS[r.codec].color};font-weight:700">${CODECS[r.codec].name}</td><td>${r.qos ? "켬" : "끔"}</td>
+    <td>${r.found != null ? r.found.toFixed(1) + "초" : "-"}</td>
+    <td class="${r.delay != null && r.delay <= 0.2 ? "ok" : "bad"}">${r.delay != null ? (r.delay * 1000).toFixed(0) + " ms" : "-"}</td>
+    <td>${r.total != null ? r.total.toFixed(1) + "초" : "-"}</td><td class="${r.ok ? "ok" : "bad"}">${r.ok ? "성공" : r.reason}</td></tr>`).join("");
+  showMenu();
+  for (const k in keys) keys[k] = false;
+}
+
+function togglePal() { pal = pal === "iron" ? "white" : "iron"; FOG = trgb(14); needRender = true; const b = document.getElementById("palBtn"); if (b) b.textContent = pal === "iron" ? "색상: 철 무지개" : "색상: 흰색이 뜨거움"; }
+function abort() {
+  if (!running) return;
+  running = false;
+  for (const k in keys) keys[k] = false;
+  $("ovTitle").textContent = "과열 접속부를 찾아라";
+  $("ovSub").innerHTML = "순찰을 중단했다. 이번 판은 기록하지 않는다.<br>준비되면 다시 출동하자.";
+  $("resultBox").innerHTML = "";
+  $("startBtn").textContent = "출동!";
+  showMenu();
+}
+
+// =============== 입력 ===============
+const seg = $("codecSeg"), qsw = $("qosSw");
+function syncUI() {
+  seg.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.codec === codec));
+  qsw.classList.toggle("on", qos); qsw.setAttribute("aria-pressed", String(qos));
+  $("qosTxt").textContent = `경보 우선 전송 (QoS) ${qos ? "켬" : "끔"}`;
+}
+seg.addEventListener("click", e => { const b = e.target.closest("button"); if (b) { codec = b.dataset.codec; syncUI(); } });
+qsw.addEventListener("click", () => { qos = !qos; syncUI(); });
+$("startBtn").addEventListener("click", start);
+$("palBtn").addEventListener("click", togglePal);
+$("fsBtn").addEventListener("click", () => { const el = $("game"); try { (document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen()).catch(() => {}); } catch (e) {} });
+const GAME_KEYS = ["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft", "ShiftRight", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"];
+window.addEventListener("keydown", e => {
+  if (!running) { if (e.key === "Enter") { e.preventDefault(); start(); } return; }
+  if (GAME_KEYS.includes(e.code)) { keys[e.code] = true; e.preventDefault(); }
+  if (e.code === "KeyF") { e.preventDefault(); sendAlarm(); }
+  if (e.code === "KeyR") { e.preventDefault(); abort(); }
+  if (e.code === "KeyP") { e.preventDefault(); togglePal(); }
+});
+window.addEventListener("keyup", e => { keys[e.code] = false; });
+window.addEventListener("blur", () => { for (const k in keys) keys[k] = false; });
+let drag = null;
+sc.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY }; sc.setPointerCapture(e.pointerId); });
+sc.addEventListener("pointermove", e => {
+  if (!drag || !running) return;
+  drone.yaw += (e.clientX - drag.x) * 0.004; drone.pitch = Math.max(-1.0, Math.min(0.6, drone.pitch - (e.clientY - drag.y) * 0.004));
+  drag = { x: e.clientX, y: e.clientY };
+});
+sc.addEventListener("pointerup", () => { drag = null; });
+
+// =============== 루프 ===============
+let last = null, attractT = 0;
+function loop(ts) {
+  if (last == null) last = ts;
+  const dt = Math.min(0.05, (ts - last) / 1000); last = ts;
+  if (running) step(dt);
+  else { // 메뉴 배경: 사거리 주변을 천천히 도는 카메라
+    attractT += dt;
+    const a = attractT * 0.12;
+    display = { t: attractT, x: -2.5 + Math.sin(a) * 55, y: 24, z: 209 - Math.cos(a) * 55, yaw: -a + Math.PI * 0, pitch: -0.32, isI: true };
+    display.yaw = Math.atan2(-2.5 - display.x, 209 - display.z);
+    needRender = true;
+  }
+  if (needRender) { drawScene(display); present(); needRender = false; }
+  drawHUD();
+  requestAnimationFrame(loop);
+}
+syncUI(); reset(); $("game").classList.add("menu");
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
